@@ -31,7 +31,7 @@ if (!node.mindMap.saved) {
 }
 
 def file = node.mindMap.file
-if (file === null)
+if (file.is(null))
     return
 
 def newName = OBFUSCATED_PREFIX + file.name
@@ -39,7 +39,7 @@ def newStem = newName.replaceAll(/\.mm$/, '')
 def targetFile = new File(file.parentFile, newName)
 def openedMap = c.openMindMaps.find { it.file == targetFile }
 def isOkToObfuscate = true
-if (openedMap !== null) {
+if (!openedMap.is(null)) {
     isOkToObfuscate = false
     if (confirmCloseObfuscated(nodeModel)) {
         def allowInteraction = true
@@ -119,7 +119,7 @@ static obfuscateNote(Node n) {
 
 static obfuscateLinks(Node n) {
     def uri = n.link.uri
-    if (uri === null)
+    if (uri.is(null))
         return
     def stringUri = uri.toString()
     if (stringUri.startsWith('#'))
@@ -155,7 +155,7 @@ static obfuscateConnectors(Node n) {
     for (conn in n.connectorsOut) {
         for (propertyName in ['sourceLabel', 'middleLabel', 'targetLabel']) {
             String label = conn."$propertyName"
-            if (label !== null)
+            if (!label.is(null))
                 conn."$propertyName" = x(label)
         }
     }
