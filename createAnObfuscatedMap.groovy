@@ -17,11 +17,6 @@ def c = ScriptUtils.c()
 def node = ScriptUtils.node()
 NodeModel nodeModel = node.delegate
 
-if (node.mindMap.file.name.startsWith(OBFUSCATED_PREFIX)) {
-    informAlreadyObfuscated()
-    return
-}
-
 if (!node.mindMap.saved) {
     if (confirmSaveMap(nodeModel)) {
         def allowInteraction = true
@@ -33,6 +28,11 @@ if (!node.mindMap.saved) {
 def file = node.mindMap.file
 if (file.is(null))
     return
+
+if (file.name.startsWith(OBFUSCATED_PREFIX)) {
+    informAlreadyObfuscated()
+    return
+}
 
 def newName = OBFUSCATED_PREFIX + file.name
 def newStem = newName.replaceAll(/\.mm$/, '')
