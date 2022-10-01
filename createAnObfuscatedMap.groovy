@@ -143,10 +143,12 @@ static _obfuscateUriExceptLastSegmentsAndHash(String uriString, int exceptLastSe
 
 static obfuscateAttributes(Node n) {
     n.attributes.each { attr ->
-        def value = attr.value
-        if (value instanceof String) {
-            if (!value.startsWith('='))
-                attr.value = x(value)
+        if (!attr.key.startsWith('script')) {
+            def value = attr.value
+            if (value instanceof String) {
+                if (!value.startsWith('='))
+                    attr.value = x(value)
+            }
         }
     }
 }
