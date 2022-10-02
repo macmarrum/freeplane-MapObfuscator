@@ -66,7 +66,7 @@ mindMap.root.findAll().each { Node n ->
 mindMap.root.text = newStem
 mindMap.name = newStem
 
-def isOkToSave = !file.exists()
+def isOkToSave = !targetFile.exists()
 if (!isOkToSave && confirmOverwrite(targetFile, nodeModel))
     isOkToSave = true
 if (isOkToSave)
