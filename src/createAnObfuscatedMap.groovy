@@ -148,10 +148,11 @@ Close it and proceed with obfuscation?'''
 
     static String xUri(text) {
         def parts = text.split(percent)
-        if (parts.size() > 1)
-            parts.collect { it.find(rxHex) ? it.size() == 2 ? it[0..<2] : it[0..<2] + x(it[2..-1]) : x(it) }.join(percent)
-        else
-            x(text)
+        if (parts.size() > 1) {
+            int i = 0
+            parts.collect {  i++ == 0 ? x(it) : it.find(rxHex) ? it.size() == 2 ? it[0..<2] : it[0..<2] + x(it[2..-1]) : x(it) }.join(percent)
+        } else
+            return x(text)
     }
 
     static void obfuscateAttributes(Node n) {
