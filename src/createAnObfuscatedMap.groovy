@@ -1,5 +1,6 @@
 // @ExecutionModes({ON_SINGLE_NODE})
 
+
 import org.freeplane.api.Node
 import org.freeplane.core.ui.components.UITools
 import org.freeplane.features.map.NodeModel
@@ -9,6 +10,8 @@ import org.freeplane.view.swing.features.filepreview.ExternalResource
 import org.freeplane.view.swing.features.filepreview.ViewerController
 
 import javax.swing.*
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 final OBFUSCATED_PREFIX = 'obfuscated~'
 
@@ -36,22 +39,17 @@ if (file.name.startsWith(OBFUSCATED_PREFIX)) {
 def newName = OBFUSCATED_PREFIX + file.name
 def newStem = newName.replaceAll(/\.mm$/, '')
 def targetFile = new File(file.parentFile, newName)
-def openedMap = c.openMindMaps.find { it.file == targetFile }
+
 def isOkToObfuscate = true
-if (!openedMap.is(null)) {
-    isOkToObfuscate = false
-    if (MapObfuscatorUtils.confirmCloseObfuscated(nodeModel)) {
-        def allowInteraction = true
-        openedMap.save(allowInteraction)
-        def force = true
-        openedMap.close(force, allowInteraction)
-        isOkToObfuscate = true
-    }
+if (targetFile.exists()) {
+    isOkToObfuscate = MapObfuscatorUtils.confirmOverwrite(targetFile, nodeModel)
 }
 if (!isOkToObfuscate)
     return
+Files.copy(file.toPath(), targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+MapObfuscatorUtils.obfuscateStyles(targetFile)
 
-def mindMap = c.mapLoader(file).withView().unsetMapLocation().mindMap
+def mindMap = c.mapLoader(targetFile).withView().mindMap
 mindMap.root.findAll().each { Node n ->
     MapObfuscatorUtils.obfuscateCore(n)
     MapObfuscatorUtils.obfuscateDetails(n)
@@ -63,13 +61,8 @@ mindMap.root.findAll().each { Node n ->
     MapObfuscatorUtils.obfuscateImagePath(m)
 }
 mindMap.root.text = newStem
-mindMap.name = newStem
-
-def isOkToSave = !targetFile.exists()
-if (!isOkToSave && MapObfuscatorUtils.confirmOverwrite(targetFile, nodeModel))
-    isOkToSave = true
-if (isOkToSave)
-    mindMap.saveAs(targetFile)
+def allowInteraction = true
+mindMap.save(allowInteraction)
 
 
 class MapObfuscatorUtils {
@@ -90,12 +83,15 @@ Save it and proceeding with the obfuscation?'''
         return resp == 0
     }
 
-    static boolean confirmCloseObfuscated(NodeModel nodeModel) {
-        def title = 'Close obfuscated?'
-        def message = '''An obfuscated copy is already open
-Close it and proceed with obfuscation?'''
-        def resp = UITools.showConfirmDialog(nodeModel, message, title, JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE)
-        return resp == 0
+    static boolean confirmOverwrite(File targetFile, NodeModel sourceModel) {
+        def title = 'Overwrite obfuscated?'
+        def msg = "The file already exists:\n${targetFile.name}\nOverwrite it?"
+        def decision = UITools.showConfirmDialog(sourceModel, msg, title, JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE)
+        return decision == 0
+    }
+
+    static void obfuscateStyles(File targetFile) {
+
     }
 
     static String x(CharSequence msg) {
@@ -150,7 +146,7 @@ Close it and proceed with obfuscation?'''
         def parts = text.split(percent)
         if (parts.size() > 1) {
             int i = 0
-            parts.collect {  i++ == 0 ? x(it) : it.find(rxHex) ? it.size() == 2 ? it[0..<2] : it[0..<2] + x(it[2..-1]) : x(it) }.join(percent)
+            parts.collect { i++ == 0 ? x(it) : it.find(rxHex) ? it.size() == 2 ? it[0..<2] : it[0..<2] + x(it[2..-1]) : x(it) }.join(percent)
         } else
             return x(text)
     }
@@ -186,12 +182,5 @@ Close it and proceed with obfuscation?'''
             vc.undoableDeactivateHook(nodeModel)
             vc.undoableActivateHook(nodeModel, newExtResource)
         }
-    }
-
-    static boolean confirmOverwrite(File targetFile, NodeModel sourceModel) {
-        def title = 'Overwrite obfuscated?'
-        def msg = "The file already exists:\n${targetFile.name}\nOverwrite it?"
-        def decision = UITools.showConfirmDialog(sourceModel, msg, title, JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE)
-        return decision == 0
     }
 }
