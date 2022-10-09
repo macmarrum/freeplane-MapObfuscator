@@ -1,8 +1,14 @@
 // @ExecutionModes({ON_SINGLE_NODE})
 
 
+import groovy.xml.XmlSlurper
+import groovy.xml.XmlUtil
+import groovy.xml.slurpersupport.GPathResult
+import groovy.xml.slurpersupport.NodeChild
+import groovy.xml.slurpersupport.NodeChildren
 import org.freeplane.api.Node
 import org.freeplane.core.ui.components.UITools
+import org.freeplane.core.util.LogUtils
 import org.freeplane.features.map.NodeModel
 import org.freeplane.features.mode.Controller
 import org.freeplane.plugin.script.proxy.ScriptUtils
@@ -10,9 +16,8 @@ import org.freeplane.view.swing.features.filepreview.ExternalResource
 import org.freeplane.view.swing.features.filepreview.ViewerController
 
 import javax.swing.*
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 
+final NAME = 'MapObfuscator'
 final OBFUSCATED_PREFIX = 'obfuscated~'
 
 c = ScriptUtils.c()
@@ -46,9 +51,10 @@ if (targetFile.exists()) {
 }
 if (!isOkToObfuscate)
     return
-Files.copy(file.toPath(), targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
-MapObfuscatorUtils.obfuscateStyles(targetFile)
+LogUtils.info("$NAME: XmlSlurper parse ${file.name}, do replacements and save to ${targetFile.name}")
+new MMFileObfuscator(file, targetFile).obfuscate()
 
+LogUtils.info("$NAME: open and obfuscate ${targetFile.name}")
 def mindMap = c.mapLoader(targetFile).withView().mindMap
 mindMap.root.findAll().each { Node n ->
     MapObfuscatorUtils.obfuscateCore(n)
@@ -61,13 +67,110 @@ mindMap.root.findAll().each { Node n ->
     MapObfuscatorUtils.obfuscateImagePath(m)
 }
 mindMap.root.text = newStem
+LogUtils.info("$NAME: save ${targetFile.name}")
 def allowInteraction = true
 mindMap.save(allowInteraction)
 
 
+class MMFileObfuscator {
+    private final File sourceFile
+    private final File targetFile
+    private final GPathResult map
+    private final oldToNewStyleName
+    private static final UTF8 = 'UTF-8'
+    private static final STYLE_NAME_PREFIX = 'Style'
+    private static final MAP_STYLE = 'MapStyle'
+    private static final STYLES_USER_DEFINED = 'styles.user-defined'
+    private static final TEXT = 'TEXT'
+    private static final NAMES_OF_NODES_WITH_STYLE_REF = ['node', 'conditional_style']
+    private static final STYLE_REF = 'STYLE_REF'
+
+    MMFileObfuscator(File sourceFile, File targetFile) {
+        this.sourceFile = sourceFile
+        this.targetFile = targetFile
+        map = parseXml(sourceFile ?: targetFile)
+        oldToNewStyleName = makeOldToNewStyleNameMap()
+    }
+
+    MMFileObfuscator(File targetFile) {
+        this(null, targetFile)
+    }
+
+    static GPathResult parseXml(File file) {
+        def slurper = new XmlSlurper()
+        slurper.setFeature('http://apache.org/xml/features/disallow-doctype-decl', false)
+        def doctype = '<!DOCTYPE map [<!ENTITY nbsp "&#160;">]>'
+        def text = doctype + file.getText(UTF8)
+        return slurper.parseText(text)
+    }
+
+    Map<String, String> makeOldToNewStyleNameMap() {
+        def customStyleNames = getUserDefinedCustomStyleNames()
+        def numberOfDigits = (customStyleNames.size() as String).size()
+        def old2new = new HashMap<String, String>(customStyleNames.size())
+        def styleNameFormat = "${STYLE_NAME_PREFIX}%0${numberOfDigits}d"
+        while (true) {
+            customStyleNames.eachWithIndex { oldName, i ->
+                old2new[oldName] = sprintf(styleNameFormat, i + 1)
+            }
+            def foundTheSameNewStyleNameInOldStyleNames = old2new.values().any { newName -> old2new.containsKey(newName) }
+            if (!foundTheSameNewStyleNameInOldStyleNames)
+                break
+            styleNameFormat = "_${styleNameFormat}"
+        }
+        return old2new
+    }
+
+    def getMapStyle() {
+        return map.node.hook.find { it.@NAME == MAP_STYLE }
+    }
+
+    def getUserDefinedStyleParent() {
+        return getMapStyle().map_styles.stylenode.stylenode.find { it.@LOCALIZED_TEXT == STYLES_USER_DEFINED }
+    }
+
+    GPathResult getUserDefinedCustomStyleNodes() {
+        NodeChildren styleNodes = getUserDefinedStyleParent().stylenode
+        return styleNodes.findAll { NodeChild it -> it.attributes().any { it.key == TEXT } }
+    }
+
+    List<String> getUserDefinedCustomStyleNames() {
+        return getUserDefinedCustomStyleNodes().collect { it.@TEXT.text() }
+    }
+
+    GPathResult renameStylesInUsualPlaces() {
+        getUserDefinedCustomStyleNodes().each { n ->
+            n.@TEXT = oldToNewStyleName[n.@TEXT.text()]
+        }
+        map.node.'**'.each { n ->
+            if (n.name() in NAMES_OF_NODES_WITH_STYLE_REF) {
+                for (e in n.attributes()) {
+                    if (e.key == STYLE_REF) {
+                        n.@STYLE_REF = oldToNewStyleName[e.value]
+                        break
+                    }
+                }
+            }
+        }
+        return map
+    }
+
+    String getObfuscatedXml() {
+        renameStylesInUsualPlaces()
+        return XmlUtil.serialize(map).replaceFirst(/^<\?xml version="1\.0" encoding="UTF-8"\?>/, '')
+    }
+
+    void obfuscate() {
+        targetFile.setText(obfuscatedXml, UTF8)
+    }
+}
+
 class MapObfuscatorUtils {
-    private static rxHex = ~/^[0-9A-Fa-f]{2}/
-    private static percent = '%'
+    private static RX_HEX = ~/^[0-9A-Fa-f]{2}/
+    private static PERCENT = '%'
+    private static RX_W = /\w/
+    private static SCRIPT = 'script'
+    private static CONNECTOR_LABEL_NAMES = ['sourceLabel', 'middleLabel', 'targetLabel']
 
     static void informAlreadyObfuscated() {
         def title = 'Already obfuscated'
@@ -90,12 +193,8 @@ Save it and proceeding with the obfuscation?'''
         return decision == 0
     }
 
-    static void obfuscateStyles(File targetFile) {
-
-    }
-
-    static String x(CharSequence msg) {
-        return msg.replaceAll(/\w/, 'x')
+    static String x(String text) {
+        return !text ? text : text.replaceAll(RX_W, 'x')
     }
 
     static void obfuscateCore(Node n) {
@@ -106,15 +205,15 @@ Save it and proceeding with the obfuscation?'''
     }
 
     static void obfuscateDetails(Node n) {
-        def details = n.details?.text
-        if (details && !details.startsWith('='))
-            n.details = x(details)
+        def text = n.details?.text
+        if (text && !text.startsWith('='))
+            n.details = x(text)
     }
 
     static void obfuscateNote(Node n) {
-        def note = n.note?.text
-        if (note && !note.startsWith('='))
-            n.note = x(note)
+        def text = n.note?.text
+        if (text && !text.startsWith('='))
+            n.note = x(text)
     }
 
     static void obfuscateLinks(Node n) {
@@ -126,7 +225,7 @@ Save it and proceeding with the obfuscation?'''
             return
         int exceptLastXSegments = 1
         if (stringUri.matches('^https?://.*') && !stringUri.replaceAll('(^https?://|/$)', '').contains('/'))
-            exceptLastXSegments = 0  // obfuscate http hosts
+            exceptLastXSegments = 0  // no path: obfuscate http host
         n.link.uri = _obfuscateUriExceptLastSegmentsAndHash(stringUri, exceptLastXSegments)
     }
 
@@ -143,17 +242,17 @@ Save it and proceeding with the obfuscation?'''
     }
 
     static String xUri(text) {
-        def parts = text.split(percent)
+        def parts = text.split(PERCENT)
         if (parts.size() > 1) {
             int i = 0
-            parts.collect { i++ == 0 ? x(it) : it.find(rxHex) ? it.size() == 2 ? it[0..<2] : it[0..<2] + x(it[2..-1]) : x(it) }.join(percent)
+            parts.collect { i++ == 0 ? x(it) : it.find(RX_HEX) ? it.size() == 2 ? it[0..<2] : it[0..<2] + x(it[2..-1]) : x(it) }.join(PERCENT)
         } else
             return x(text)
     }
 
     static void obfuscateAttributes(Node n) {
         n.attributes.each { attr ->
-            if (!attr.key.startsWith('script')) {
+            if (!attr.key.startsWith(SCRIPT)) {
                 def value = attr.value
                 if (value instanceof String) {
                     if (!value.startsWith('='))
@@ -165,7 +264,7 @@ Save it and proceeding with the obfuscation?'''
 
     static void obfuscateConnectors(Node n) {
         for (conn in n.connectorsOut) {
-            for (propertyName in ['sourceLabel', 'middleLabel', 'targetLabel']) {
+            for (propertyName in (CONNECTOR_LABEL_NAMES)) {
                 String label = conn."$propertyName"
                 if (!label.is(null))
                     conn."$propertyName" = x(label)
