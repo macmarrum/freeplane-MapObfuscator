@@ -11,6 +11,7 @@ import org.freeplane.core.ui.components.UITools
 import org.freeplane.core.util.LogUtils
 import org.freeplane.features.map.NodeModel
 import org.freeplane.features.mode.Controller
+import org.freeplane.plugin.script.FreeplaneScriptBaseClass
 import org.freeplane.plugin.script.proxy.ScriptUtils
 import org.freeplane.view.swing.features.filepreview.ExternalResource
 import org.freeplane.view.swing.features.filepreview.ViewerController
@@ -51,20 +52,30 @@ if (targetFile.exists()) {
 }
 if (!isOkToObfuscate)
     return
+def config = new FreeplaneScriptBaseClass.ConfigProperties()
 LogUtils.info("$NAME: XmlSlurper parse ${file.name}, do replacements and save to ${targetFile.name}")
-new MMFileObfuscator(file, targetFile).obfuscate()
+def options = [obfuscate_style_names: true]
+options.each { options[it.key] = config.getBooleanProperty(it.key) }
+new MMFileObfuscator(file, targetFile, options).obfuscate()
 
 LogUtils.info("$NAME: open and obfuscate ${targetFile.name}")
 def mindMap = c.mapLoader(targetFile).withView().mindMap
 mindMap.root.findAll().each { Node n ->
-    MapObfuscatorUtils.obfuscateCore(n)
-    MapObfuscatorUtils.obfuscateDetails(n)
-    MapObfuscatorUtils.obfuscateNote(n)
-    MapObfuscatorUtils.obfuscateLinks(n)
-    MapObfuscatorUtils.obfuscateAttributes(n)
-    MapObfuscatorUtils.obfuscateConnectors(n)
+    if (config.getBooleanProperty('obfuscate_core'))
+        MapObfuscatorUtils.obfuscateCore(n)
+    if (config.getBooleanProperty('obfuscate_details'))
+        MapObfuscatorUtils.obfuscateDetails(n)
+    if (config.getBooleanProperty('obfuscate_note'))
+        MapObfuscatorUtils.obfuscateNote(n)
+    if (config.getBooleanProperty('obfuscate_links'))
+        MapObfuscatorUtils.obfuscateLinks(n)
+    if (config.getBooleanProperty('obfuscate_attributes'))
+        MapObfuscatorUtils.obfuscateAttributes(n)
+    if (config.getBooleanProperty('obfuscate_connectors'))
+        MapObfuscatorUtils.obfuscateConnectors(n)
     NodeModel m = n.delegate
-    MapObfuscatorUtils.obfuscateImagePath(m)
+    if (config.getBooleanProperty('obfuscate_image_paths'))
+        MapObfuscatorUtils.obfuscateImagePath(m)
 }
 mindMap.root.text = newStem
 LogUtils.info("$NAME: save ${targetFile.name}")
@@ -84,16 +95,18 @@ class MMFileObfuscator {
     private static final TEXT = 'TEXT'
     private static final NAMES_OF_NODES_WITH_STYLE_REF = ['node', 'conditional_style']
     private static final STYLE_REF = 'STYLE_REF'
+    private final Map<String, Boolean> options
 
-    MMFileObfuscator(File sourceFile, File targetFile) {
+    MMFileObfuscator(File sourceFile, File targetFile, Map<String, Boolean> options) {
         this.sourceFile = sourceFile
         this.targetFile = targetFile
+        this.options = options
         map = parseXml(sourceFile ?: targetFile)
         oldToNewStyleName = makeOldToNewStyleNameMap()
     }
 
-    MMFileObfuscator(File targetFile) {
-        this(null, targetFile)
+    MMFileObfuscator(File targetFile, Map<String, Boolean> options) {
+        this(null, targetFile, options)
     }
 
     static GPathResult parseXml(File file) {
@@ -156,7 +169,8 @@ class MMFileObfuscator {
     }
 
     String getObfuscatedXml() {
-        renameStylesInUsualPlaces()
+        if (options.obfuscate_style_names)
+            renameStylesInUsualPlaces()
         return XmlUtil.serialize(map).replaceFirst(/^<\?xml version="1\.0" encoding="UTF-8"\?>/, '')
     }
 
@@ -166,11 +180,17 @@ class MMFileObfuscator {
 }
 
 class MapObfuscatorUtils {
-    private static RX_HEX = ~/^[0-9A-Fa-f]{2}/
-    private static PERCENT = '%'
-    private static RX_W = /\w/
-    private static SCRIPT = 'script'
-    private static CONNECTOR_LABEL_NAMES = ['sourceLabel', 'middleLabel', 'targetLabel']
+    private static final LT = '<'
+    private static final GT = '>'
+    private static final AMP = '&'
+    private static final SCL = ';'
+    private static final RX_HEX = ~/^[0-9A-Fa-f]{2}/
+    private static final PERCENT = '%'
+    private static final HTML = '<html>'
+    private static final EQ = '='
+    private static final RX_W = /\w/
+    private static final SCRIPT = 'script'
+    private static final CONNECTOR_LABEL_NAMES = ['sourceLabel', 'middleLabel', 'targetLabel']
 
     static void informAlreadyObfuscated() {
         def title = 'Already obfuscated'
@@ -197,23 +217,50 @@ Save it and proceeding with the obfuscation?'''
         return !text ? text : text.replaceAll(RX_W, 'x')
     }
 
+    static String xHtml(String text) {
+        def isTagInProgress = false
+        def isEntityInProgress = false
+        def list = text.toList()
+        list.eachWithIndex { it, i ->
+            if (it == LT)
+                isTagInProgress = true
+            else if (it == GT)
+                isTagInProgress = false
+            else if (it == AMP)
+                isEntityInProgress = true
+            else if (isEntityInProgress && it == SCL)
+                isEntityInProgress = false
+            if (!(isTagInProgress || isEntityInProgress) && it ==~ RX_W)
+                list[i] = 'x'
+        }
+        return list.join('')
+    }
+
     static void obfuscateCore(Node n) {
-        if (n.text.startsWith('<html>'))
-            n.text = x(n.to.plain)
-        else if (!n.text.startsWith('='))
+        if (n.text.startsWith(HTML))
+            n.text = xHtml(n.text)
+        else if (!n.text.startsWith(EQ))
             n.text = x(n.text)
     }
 
     static void obfuscateDetails(Node n) {
-        def text = n.details?.text
-        if (text && !text.startsWith('='))
-            n.details = x(text)
+        def text = n.detailsText
+        if (text) {
+            if (text.startsWith(HTML))
+                n.details = xHtml(text)
+            else if (!text.startsWith(EQ))
+                n.details = x(text)
+        }
     }
 
     static void obfuscateNote(Node n) {
-        def text = n.note?.text
-        if (text && !text.startsWith('='))
-            n.note = x(text)
+        def text = n.noteText
+        if (text) {
+            if (text.startsWith(HTML))
+                n.note = xHtml(text)
+            else if (!text.startsWith(EQ))
+                n.note = x(text)
+        }
     }
 
     static void obfuscateLinks(Node n) {
@@ -255,7 +302,7 @@ Save it and proceeding with the obfuscation?'''
             if (!attr.key.startsWith(SCRIPT)) {
                 def value = attr.value
                 if (value instanceof String) {
-                    if (!value.startsWith('='))
+                    if (!value.startsWith(EQ))
                         attr.value = x(value)
                 }
             }
