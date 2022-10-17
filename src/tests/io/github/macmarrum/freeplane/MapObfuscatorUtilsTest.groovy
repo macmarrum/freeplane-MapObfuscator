@@ -1,11 +1,12 @@
+package io.github.macmarrum.freeplane
 
 import groovy.transform.SourceURI
 import org.junit.jupiter.api.Test
 
 import java.nio.file.Paths
 
-import static MapObfuscatorUtils._obfuscateUriExceptLastSegmentsAndHash
-import static MapObfuscatorUtils.xHtml
+import static io.github.macmarrum.freeplane.MapObfuscatorUtils._obfuscateUriExceptLastSegmentsAndHash
+import static io.github.macmarrum.freeplane.MapObfuscatorUtils.xHtml
 
 class MapObfuscatorUtilsTest {
 

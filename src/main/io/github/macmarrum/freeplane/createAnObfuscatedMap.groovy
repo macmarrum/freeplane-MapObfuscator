@@ -1,5 +1,4 @@
-// @ExecutionModes({ON_SINGLE_NODE})
-
+package io.github.macmarrum.freeplane
 
 import groovy.xml.XmlSlurper
 import groovy.xml.slurpersupport.GPathResult
@@ -446,3 +445,4 @@ Save it and proceeding with the obfuscation?'''
         return filename.reverse().split(/\./, 2).collect { it.reverse() }.reverse()
     }
 }
+// @ExecutionModes({ON_SINGLE_NODE})
