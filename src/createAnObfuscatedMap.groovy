@@ -2,32 +2,73 @@
 
 
 import groovy.xml.XmlSlurper
-import groovy.xml.XmlUtil
 import groovy.xml.slurpersupport.GPathResult
 import groovy.xml.slurpersupport.NodeChild
 import groovy.xml.slurpersupport.NodeChildren
+import org.freeplane.api.MindMap
 import org.freeplane.api.Node
 import org.freeplane.core.ui.components.UITools
+import org.freeplane.core.util.HtmlUtils
 import org.freeplane.core.util.LogUtils
 import org.freeplane.features.map.NodeModel
 import org.freeplane.features.mode.Controller
 import org.freeplane.plugin.script.FreeplaneScriptBaseClass
+import org.freeplane.plugin.script.proxy.ConvertibleDate
+import org.freeplane.plugin.script.proxy.ConvertibleNumber
 import org.freeplane.plugin.script.proxy.ScriptUtils
 import org.freeplane.view.swing.features.filepreview.ExternalResource
 import org.freeplane.view.swing.features.filepreview.ViewerController
 
 import javax.swing.*
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 final NAME = 'MapObfuscator'
-final OBFUSCATED_PREFIX = 'obfuscated~'
+final OBFUSCATED_SUFFIX = '~obfuscated'
 
-c = ScriptUtils.c()
-node = ScriptUtils.node()
+def c = ScriptUtils.c()
+def node = ScriptUtils.node()
+def config = new FreeplaneScriptBaseClass.ConfigProperties()
 NodeModel nodeModel = node.delegate
 
+class Opt {
+    public static mo_put_file_name_in_root_core = true
+    public static mo_obfuscate_core = true
+    public static mo_obfuscate_details = true
+    public static mo_obfuscate_note = true
+    public static mo_preserve_html = true
+    public static mo_obfuscate_links = true
+    public static mo_preserve_last_segment_in_links = false
+    public static mo_obfuscate_attribute_values = true
+    public static mo_obfuscate_connectors = true
+    public static mo_obfuscate_image_paths = true
+    public static mo_obfuscate_formulas = true
+    public static mo_obfuscate_scripts = true
+    public static mo_obfuscate_style_names = true
+    public static date_format = 'yyyy-MM-dd'
+}
+
+final RX_MO = ~/^mo_/
+final MAP_OBFUSCATOR = 'MapObfuscator.'
+Opt.class.declaredFields.each {
+    if (!it.synthetic) {
+        switch (Opt."${it.name}".class) {
+            case Boolean:
+                Opt."${it.name}" = config.getBooleanProperty(it.name.replaceFirst(RX_MO, MAP_OBFUSCATOR))
+                break
+            case Integer:
+                Opt."${it.name}" = config.getIntProperty(it.name.replaceFirst(RX_MO, MAP_OBFUSCATOR))
+                break
+            case String:
+                Opt."${it.name}" = config.getProperty(it.name.replaceFirst(RX_MO, MAP_OBFUSCATOR))
+                break
+        }
+    }
+}
+
+def allowInteraction = true
 if (!node.mindMap.saved) {
     if (MapObfuscatorUtils.confirmSaveMap(nodeModel)) {
-        def allowInteraction = true
         node.mindMap.save(allowInteraction)
     } else
         return
@@ -37,76 +78,93 @@ def file = node.mindMap.file
 if (file.is(null))
     return
 
-if (file.name.startsWith(OBFUSCATED_PREFIX)) {
+def (stem, ext) = MapObfuscatorUtils.splitExtension(file.name)
+if (stem.endsWith(OBFUSCATED_SUFFIX)) {
     MapObfuscatorUtils.informAlreadyObfuscated()
     return
 }
 
-def newName = OBFUSCATED_PREFIX + file.name
-def newStem = newName.replaceAll(/\.mm$/, '')
-def targetFile = new File(file.parentFile, newName)
+def obfuscatedName = "$stem$OBFUSCATED_SUFFIX.$ext".toString()
+def obfuscatedStem = "$stem$OBFUSCATED_SUFFIX".toString()
+def obfuscatedFile = new File(file.parentFile, obfuscatedName)
+
+def force = false
+def disallowInteraction = false
+def openObfuscated = c.openMindMaps.find { MindMap it -> it.name == obfuscatedStem }
+if (openObfuscated) {
+    openObfuscated.save(disallowInteraction)
+    openObfuscated.close(force, allowInteraction)
+}
 
 def isOkToObfuscate = true
-if (targetFile.exists()) {
-    isOkToObfuscate = MapObfuscatorUtils.confirmOverwrite(targetFile, nodeModel)
+if (obfuscatedFile.exists()) {
+    isOkToObfuscate = MapObfuscatorUtils.confirmOverwrite(obfuscatedFile, nodeModel)
 }
 if (!isOkToObfuscate)
     return
-def config = new FreeplaneScriptBaseClass.ConfigProperties()
-LogUtils.info("$NAME: XmlSlurper parse ${file.name}, do replacements and save to ${targetFile.name}")
-def options = [obfuscate_style_names: true]
-options.each { options[it.key] = config.getBooleanProperty(it.key) }
-new MMFileObfuscator(file, targetFile, options).obfuscate()
+Files.copy(file.toPath(), obfuscatedFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
 
-LogUtils.info("$NAME: open and obfuscate ${targetFile.name}")
-def mindMap = c.mapLoader(targetFile).withView().mindMap
-mindMap.root.findAll().each { Node n ->
-    if (config.getBooleanProperty('obfuscate_core'))
+if (Opt.mo_obfuscate_style_names) {
+    LogUtils.info("$NAME: search and replace in ${obfuscatedFile.name}")
+    MapObfuscatorUtils.obfuscateStyleNames(obfuscatedFile)
+}
+
+LogUtils.info("$NAME: open and obfuscate ${obfuscatedFile.name}")
+def mindMap = c.mapLoader(obfuscatedFile).withView().mindMap
+
+def getCloneLeaders(Node n, List<Node> leaders, List<Node> subtrees, List<Node> clones) {
+    printf('>> getLeaders(%s %s) \n', n.text, n.id)
+    if (n in subtrees)
+        return leaders
+    subtrees.addAll(n.nodesSharingContentAndSubtree)
+    if (n !in clones) {
+        leaders << n
+        clones.addAll(n.nodesSharingContent)
+    }
+    n.children.each { Node it ->
+        return getCloneLeaders(it, leaders, subtrees, clones)
+    }
+    return leaders
+}
+
+def cloneLeaders = getCloneLeaders(mindMap.root, new LinkedList<Node>(), new LinkedList<Node>(), new LinkedList<Node>())
+cloneLeaders.each { Node n ->
+    if (Opt.mo_obfuscate_core)
         MapObfuscatorUtils.obfuscateCore(n)
-    if (config.getBooleanProperty('obfuscate_details'))
+    if (Opt.mo_obfuscate_details)
         MapObfuscatorUtils.obfuscateDetails(n)
-    if (config.getBooleanProperty('obfuscate_note'))
+    if (Opt.mo_obfuscate_note)
         MapObfuscatorUtils.obfuscateNote(n)
-    if (config.getBooleanProperty('obfuscate_links'))
+    if (Opt.mo_obfuscate_links)
         MapObfuscatorUtils.obfuscateLinks(n)
-    if (config.getBooleanProperty('obfuscate_attributes'))
-        MapObfuscatorUtils.obfuscateAttributes(n)
-    if (config.getBooleanProperty('obfuscate_connectors'))
+    if (Opt.mo_obfuscate_attribute_values)
+        MapObfuscatorUtils.obfuscateAttributeValues(n)
+    if (Opt.mo_obfuscate_connectors)
         MapObfuscatorUtils.obfuscateConnectors(n)
     NodeModel m = n.delegate
-    if (config.getBooleanProperty('obfuscate_image_paths'))
+    if (Opt.mo_obfuscate_image_paths)
         MapObfuscatorUtils.obfuscateImagePath(m)
 }
-mindMap.root.text = newStem
-LogUtils.info("$NAME: save ${targetFile.name}")
-def allowInteraction = true
+if (Opt.mo_put_file_name_in_root_core)
+    mindMap.root.text = obfuscatedStem
+LogUtils.info("$NAME: save ${obfuscatedFile.name}")
 mindMap.save(allowInteraction)
 
 
-class MMFileObfuscator {
-    private final File sourceFile
-    private final File targetFile
-    private final GPathResult map
-    private final oldToNewStyleName
-    private static final UTF8 = 'UTF-8'
-    private static final STYLE_NAME_PREFIX = 'Style'
-    private static final MAP_STYLE = 'MapStyle'
-    private static final STYLES_USER_DEFINED = 'styles.user-defined'
-    private static final TEXT = 'TEXT'
-    private static final NAMES_OF_NODES_WITH_STYLE_REF = ['node', 'conditional_style']
-    private static final STYLE_REF = 'STYLE_REF'
-    private final Map<String, Boolean> options
+class MmXml {
+    public final File file
+    public final GPathResult map
+    public static final UTF8 = 'UTF-8'
+    public static final STYLE_NAME_PREFIX = 'Style'
+    public static final MAP_STYLE = 'MapStyle'
+    public static final STYLES_USER_DEFINED = 'styles.user-defined'
+    public static final TEXT = 'TEXT'
+    public static final NAMES_OF_NODES_WITH_STYLE_REF = ['node', 'conditional_style']
+    public static final STYLE_REF = 'STYLE_REF'
 
-    MMFileObfuscator(File sourceFile, File targetFile, Map<String, Boolean> options) {
-        this.sourceFile = sourceFile
-        this.targetFile = targetFile
-        this.options = options
-        map = parseXml(sourceFile ?: targetFile)
-        oldToNewStyleName = makeOldToNewStyleNameMap()
-    }
-
-    MMFileObfuscator(File targetFile, Map<String, Boolean> options) {
-        this(null, targetFile, options)
+    MmXml(File file) {
+        this.file = file
+        map = parseXml(file)
     }
 
     static GPathResult parseXml(File file) {
@@ -117,7 +175,7 @@ class MMFileObfuscator {
         return slurper.parseText(text)
     }
 
-    Map<String, String> makeOldToNewStyleNameMap() {
+    Map<String, String> getStyleRenamingMap() {
         def customStyleNames = getUserDefinedCustomStyleNames()
         def numberOfDigits = (customStyleNames.size() as String).size()
         def old2new = new HashMap<String, String>(customStyleNames.size())
@@ -150,47 +208,40 @@ class MMFileObfuscator {
     List<String> getUserDefinedCustomStyleNames() {
         return getUserDefinedCustomStyleNodes().collect { it.@TEXT.text() }
     }
+}
 
-    GPathResult renameStylesInUsualPlaces() {
-        getUserDefinedCustomStyleNodes().each { n ->
-            n.@TEXT = oldToNewStyleName[n.@TEXT.text()]
-        }
-        map.node.'**'.each { n ->
-            if (n.name() in NAMES_OF_NODES_WITH_STYLE_REF) {
-                for (e in n.attributes()) {
-                    if (e.key == STYLE_REF) {
-                        n.@STYLE_REF = oldToNewStyleName[e.value]
-                        break
-                    }
-                }
-            }
-        }
-        return map
-    }
+class FSBCImpl extends FreeplaneScriptBaseClass {
 
-    String getObfuscatedXml() {
-        if (options.obfuscate_style_names)
-            renameStylesInUsualPlaces()
-        return XmlUtil.serialize(map).replaceFirst(/^<\?xml version="1\.0" encoding="UTF-8"\?>/, '')
-    }
-
-    void obfuscate() {
-        targetFile.setText(obfuscatedXml, UTF8)
+    @Override
+    Object run() {
+        return null
     }
 }
 
 class MapObfuscatorUtils {
+    private static final UTF8 = 'UTF-8'
     private static final LT = '<'
     private static final GT = '>'
     private static final AMP = '&'
     private static final SCL = ';'
+    private static final MENUITEM = 'menuitem:'
+    private static final EXECUTE = 'execute:'
     private static final RX_HEX = ~/^[0-9A-Fa-f]{2}/
+    private static final RX_HREF_SRC = ~/(?i)(?:(?<= href=")|(?<= src="))([^"]+)(?=")/
+    private static final MAILTO = 'mailto:'
+    private static final AT = '@'
+    private static final HASH = '#'
+    private static final SLASH = '/'
     private static final PERCENT = '%'
     private static final HTML = '<html>'
     private static final EQ = '='
-    private static final RX_W = /\w/
+    private static final RX_W = ~/\w/
+    private static final OBFUSCATED_FORMULA = /='obfuscated formula'/
     private static final SCRIPT = 'script'
+    private static final OBFUSCATED_SCRIPT = '// obfuscated script'
     private static final CONNECTOR_LABEL_NAMES = ['sourceLabel', 'middleLabel', 'targetLabel']
+    private static final XDATE = new FSBCImpl().format(Date.parse('yyyy-MM-dd', '1970-01-01'), Opt.date_format)
+    private static final XNUMBER = 123
 
     static void informAlreadyObfuscated() {
         def title = 'Already obfuscated'
@@ -206,11 +257,25 @@ Save it and proceeding with the obfuscation?'''
         return resp == 0
     }
 
-    static boolean confirmOverwrite(File targetFile, NodeModel sourceModel) {
+    static boolean confirmOverwrite(File obfuscatedFile, NodeModel sourceModel) {
         def title = 'Overwrite obfuscated?'
-        def msg = "The file already exists:\n${targetFile.name}\nOverwrite it?"
+        def msg = "The file already exists:\n${obfuscatedFile.name}\nOverwrite it?"
         def decision = UITools.showConfirmDialog(sourceModel, msg, title, JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE)
         return decision == 0
+    }
+
+    static void obfuscateStyleNames(File obfuscatedFile) {
+        obfuscatedFile.setText(getTextWithRenamedStyles(obfuscatedFile), UTF8)
+    }
+
+    static String getTextWithRenamedStyles(File obfuscatedFile) {
+        def styleRenamingMap = new MmXml(obfuscatedFile).styleRenamingMap
+        def text = obfuscatedFile.getText(UTF8)
+        styleRenamingMap.each { e ->
+            text = text.replaceAll("(?<=${MmXml.TEXT}=\")${e.key}(?=\")", e.value)
+            text = text.replaceAll("(?<=${MmXml.STYLE_REF}=\")${e.key}(?=\")", e.value)
+        }
+        return text
     }
 
     static String x(String text) {
@@ -236,29 +301,57 @@ Save it and proceeding with the obfuscation?'''
         return list.join('')
     }
 
+    static String xHrefIfEnabled(String text) {
+        return Opt.mo_obfuscate_links ? text.replaceAll(RX_HREF_SRC) { _obfuscateStringUri(it[0] as String) } : text
+    }
+
     static void obfuscateCore(Node n) {
-        if (n.text.startsWith(HTML))
-            n.text = xHtml(n.text)
-        else if (!n.text.startsWith(EQ))
-            n.text = x(n.text)
+        def text = n.text
+        if (text) {
+            def convertible = n.to
+            if (convertible instanceof ConvertibleDate)
+                n.text = XDATE
+            else if (convertible instanceof ConvertibleNumber)
+                n.text = XNUMBER
+            else {
+                if (text.startsWith(HTML))
+                    n.text = Opt.mo_preserve_html ? xHtml(xHrefIfEnabled(text)) : x(HtmlUtils.htmlToPlain(text))
+                else {
+                    if (!text.startsWith(EQ))
+                        n.text = x(text)
+                    else if (Opt.mo_obfuscate_formulas)
+                        n.text = OBFUSCATED_FORMULA
+                }
+            }
+        }
     }
 
     static void obfuscateDetails(Node n) {
         def text = n.detailsText
         if (text) {
-            if (text.startsWith(HTML))
-                n.details = xHtml(text)
-            else if (!text.startsWith(EQ))
-                n.details = x(text)
+            if (text.startsWith(HTML)) {
+                def plain = HtmlUtils.htmlToPlain(text)
+                if (!plain.startsWith(EQ))
+                    n.details = Opt.mo_preserve_html ? xHtml(xHrefIfEnabled(text)) : x(plain)
+                else if (Opt.mo_obfuscate_formulas)
+                    n.details = OBFUSCATED_FORMULA
+            } else {
+                if (!text.startsWith(EQ))
+                    n.details = x(text)
+                else if (Opt.mo_obfuscate_formulas)
+                    n.details = OBFUSCATED_FORMULA
+            }
         }
     }
 
     static void obfuscateNote(Node n) {
         def text = n.noteText
         if (text) {
-            if (text.startsWith(HTML))
-                n.note = xHtml(text)
-            else if (!text.startsWith(EQ))
+            if (text.startsWith(HTML)) {
+                def plain = HtmlUtils.htmlToPlain(text)
+                if (Opt.mo_obfuscate_formulas || !plain.startsWith(EQ))
+                    n.note = Opt.mo_preserve_html ? xHtml(xHrefIfEnabled(text)) : x(plain)
+            } else if (Opt.mo_obfuscate_formulas || !text.startsWith(EQ))
                 n.note = x(text)
         }
     }
@@ -268,24 +361,37 @@ Save it and proceeding with the obfuscation?'''
         if (uri.is(null))
             return
         def stringUri = uri.toString()
-        if (stringUri.startsWith('#'))
-            return
-        int exceptLastXSegments = 1
-        if (stringUri.matches('^https?://.*') && !stringUri.replaceAll('(^https?://|/$)', '').contains('/'))
-            exceptLastXSegments = 0  // no path: obfuscate http host
-        n.link.uri = _obfuscateUriExceptLastSegmentsAndHash(stringUri, exceptLastXSegments)
+        if (!stringUri.startsWith(MENUITEM) && !stringUri.startsWith(EXECUTE))
+            n.link.uri = _obfuscateStringUri(stringUri).toURI()
     }
 
-    static URI _obfuscateUriExceptLastSegmentsAndHash(String uriString, int exceptLastXSegments = 0) {
-        def pathHash = uriString.split('#')
-        def uriArray = pathHash[0].split('/')
-        def uriArraySize = uriArray.size()
-        uriArray.eachWithIndex { part, i ->
-            if (i > 0 && i < uriArraySize - exceptLastXSegments)
-                uriArray[i] = xUri(part)
-        }
-        def newUriString = uriArray.join('/') + (pathHash.size() == 2 ? '#' + pathHash[1] : '')
-        return newUriString.toURI()
+    static String _obfuscateStringUri(String stringUri) {
+        if (stringUri.startsWith(HASH))
+            return stringUri
+        int preserveLastXSegments = Opt.mo_preserve_last_segment_in_links ? 1 : 0
+        def isHttp = stringUri.matches('^https?://.*')
+        def strippedUri = stringUri.replaceAll('(^https?://|/$)', '')
+        if (isHttp && !strippedUri.contains(SLASH))
+            preserveLastXSegments = 0  // no path; obfuscate http host
+        return _obfuscateUriExceptLastSegmentsAndHash(stringUri, preserveLastXSegments)
+    }
+
+    static String _obfuscateUriExceptLastSegmentsAndHash(String stringUri, int preserveLastXSegments = 0) {
+        String newUriString
+        if (stringUri.startsWith(MAILTO))
+            newUriString = MAILTO + stringUri[7..-1].split(AT).collect { xUri(it) }.join(AT)
+        else if (stringUri.contains(SLASH)) {
+            def pathHash = stringUri.split(HASH)
+            def uriArray = pathHash[0].split(SLASH)
+            def uriArraySize = uriArray.size()
+            uriArray.eachWithIndex { part, i ->
+                if (i > 0 && i < uriArraySize - preserveLastXSegments)
+                    uriArray[i] = xUri(part)
+            }
+            newUriString = uriArray.join(SLASH) + (pathHash.size() == 2 ? HASH + pathHash[1] : '')
+        } else
+            newUriString = xUri(stringUri)
+        return newUriString
     }
 
     static String xUri(text) {
@@ -297,15 +403,21 @@ Save it and proceeding with the obfuscation?'''
             return x(text)
     }
 
-    static void obfuscateAttributes(Node n) {
+    static void obfuscateAttributeValues(Node n) {
         n.attributes.each { attr ->
             if (!attr.key.startsWith(SCRIPT)) {
                 def value = attr.value
                 if (value instanceof String) {
                     if (!value.startsWith(EQ))
                         attr.value = x(value)
-                }
-            }
+                    else if (Opt.mo_obfuscate_formulas)
+                        attr.value = OBFUSCATED_FORMULA
+                } else if (value instanceof Date) {
+                    attr.value = XDATE
+                } else if (value instanceof Number)
+                    attr.value = XNUMBER
+            } else if (Opt.mo_obfuscate_scripts)
+                attr.value = OBFUSCATED_SCRIPT
         }
     }
 
@@ -322,11 +434,15 @@ Save it and proceeding with the obfuscation?'''
     static void obfuscateImagePath(NodeModel nodeModel) {
         def extResource = nodeModel.getExtension(ExternalResource.class)
         if (extResource) {
-            def obfuscatedUri = _obfuscateUriExceptLastSegmentsAndHash(extResource.uri.toString(), 1)
+            def obfuscatedUri = _obfuscateStringUri(extResource.uri.toString()).toURI()
             def newExtResource = new ExternalResource(obfuscatedUri)
             def vc = Controller.currentController.modeController.getExtension(ViewerController.class)
             vc.undoableDeactivateHook(nodeModel)
             vc.undoableActivateHook(nodeModel, newExtResource)
         }
+    }
+
+    static List<String> splitExtension(String filename) {
+        return filename.reverse().split(/\./, 2).collect { it.reverse() }.reverse()
     }
 }
