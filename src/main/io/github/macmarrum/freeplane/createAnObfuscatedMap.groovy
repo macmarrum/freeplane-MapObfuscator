@@ -8,6 +8,7 @@ import org.freeplane.api.MindMap
 import org.freeplane.api.Node
 import org.freeplane.core.ui.components.UITools
 import org.freeplane.core.util.HtmlUtils
+import org.freeplane.core.util.Hyperlink
 import org.freeplane.core.util.LogUtils
 import org.freeplane.features.map.NodeModel
 import org.freeplane.features.mode.Controller
@@ -434,10 +435,15 @@ Save it and proceeding with the obfuscation?'''
                         attr.value = x(value)
                     else if (Opt.mo_obfuscate_formulas)
                         attr.value = OBFUSCATED_FORMULA
-                } else if (value instanceof Date) {
+                } else if (value instanceof Date)
                     attr.value = XDATE
-                } else if (value instanceof Number)
+                else if (value instanceof Number)
                     attr.value = XNUMBER
+                else if (value instanceof Hyperlink) {
+                    def stringUri = (attr.value as Hyperlink).uri.toString()
+                    if (!(stringUri.startsWith(HASH) || stringUri.startsWith(MENUITEM) || stringUri.startsWith(EXECUTE)))
+                        attr.value = _obfuscateStringUri((attr.value as Hyperlink).toString()).toURI()
+                }
             } else if (Opt.mo_obfuscate_scripts)
                 attr.value = OBFUSCATED_SCRIPT
         }
