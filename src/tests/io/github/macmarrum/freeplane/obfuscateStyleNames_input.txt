@@ -1,5 +1,8 @@
 <map version="freeplane 1.9.13">
 <!--To view this file, download free mind mapping software Freeplane from https://www.freeplane.org -->
+<attribute_registry>
+    <attribute_name VISIBLE="true" NAME="a"/>
+</attribute_registry>
 <node TEXT="A" FOLDED="false" POSITION="left" ID="ID_190056977" LINK="test-side.mm">
 <hook NAME="accessories/plugins/AutomaticLayout.properties" VALUE="ALL"/>
 <hook NAME="MapStyle" background="#3c3836">
@@ -15,7 +18,7 @@
 <font SIZE="24"/>
 <stylenode LOCALIZED_TEXT="styles.predefined" POSITION="right" STYLE="bubble">
 <stylenode LOCALIZED_TEXT="default" ID="ID_602083445" ICON_SIZE="12 pt" FORMAT_AS_HYPERLINK="false" COLOR="#3c3836" BACKGROUND_COLOR="#fbf1c7" STYLE="bubble" SHAPE_HORIZONTAL_MARGIN="8 pt" SHAPE_VERTICAL_MARGIN="5 pt" NUMBERED="false" FORMAT="STANDARD_FORMAT" TEXT_ALIGN="DEFAULT" BORDER_WIDTH_LIKE_EDGE="false" BORDER_WIDTH="1.9 px" BORDER_COLOR_LIKE_EDGE="true" BORDER_COLOR="#f0f0f0" BORDER_DASH_LIKE_EDGE="true" BORDER_DASH="SOLID" VGAP_QUANTITY="3 pt" CHILD_NODES_ALIGNMENT="BY_CENTER" MAX_WIDTH="10 cm" MIN_WIDTH="0 cm">
-<arrowlink SHAPE="CUBIC_CURVE" COLOR="#a89984" WIDTH="2" TRANSPARENCY="255" DASH="" FONT_SIZE="9" FONT_FAMILY="SansSerif" DESTINATION="ID_602083445" STARTINCLINATION="102.75 pt;-14.25 pt;" ENDINCLINATION="102.75 pt;3 pt;" STARTARROW="NONE" ENDARROW="DEFAULT"/>
+<arrowlink SHAPE="CUBIC_CURVE" COLOR="#a89984" WIDTH="2" TRANSPARENCY="255" DASH="" FONT_SIZE="9" FONT_FAMILY="SansSerif" DESTINATION="ID_602083445" STARTINCLINATION="102.75 pt;-6 pt;" ENDINCLINATION="102.75 pt;3 pt;" STARTARROW="NONE" ENDARROW="DEFAULT"/>
 <font NAME="SansSerif" SIZE="11" BOLD="false" STRIKETHROUGH="false" ITALIC="false"/>
 <edge STYLE="bezier" COLOR="#93a1a1" WIDTH="3" DASH="SOLID"/>
 <richcontent CONTENT-TYPE="plain/auto" TYPE="DETAILS"/>
@@ -50,11 +53,16 @@
 <stylenode TEXT="NearestRight">
 <icon BUILTIN="forward"/>
 </stylenode>
-<stylenode TEXT="Style01" COLOR="#ff99ff" BACKGROUND_COLOR="#660066"/>
+<stylenode TEXT="Style01" ID="ID_1677103407" COLOR="#ff99ff" BACKGROUND_COLOR="#660066">
+<arrowlink DESTINATION="ID_1677103407"/>
+</stylenode>
 <stylenode TEXT="aa"/>
 <stylenode TEXT="bb"/>
 <stylenode TEXT="cc"/>
 <stylenode TEXT="dd"/>
+<stylenode TEXT="Style&quot;&lt;([{\^-=$!|]})?*+.&gt;&apos;style" ID="ID_485953564" COLOR="#ccffff" BACKGROUND_COLOR="#0000cc">
+<arrowlink COLOR="#0000cc" DESTINATION="ID_485953564"/>
+</stylenode>
 </stylenode>
 <stylenode LOCALIZED_TEXT="styles.AutomaticLayout" POSITION="right" STYLE="bubble">
 <stylenode LOCALIZED_TEXT="AutomaticLayout.level.root" COLOR="#fdf6e3" BACKGROUND_COLOR="#282828" STYLE="bubble" SHAPE_HORIZONTAL_MARGIN="10 pt" SHAPE_VERTICAL_MARGIN="10 pt" BORDER_WIDTH="3.1 px" BORDER_COLOR_LIKE_EDGE="true" BORDER_COLOR="#2c2b29" BORDER_DASH_LIKE_EDGE="true">
@@ -94,14 +102,56 @@
 </stylenode>
 </map_styles>
 </hook>
+<attribute_layout VALUE_WIDTH="123.75 pt"/>
+<attribute NAME="text" VALUE="one two three"/>
+<attribute NAME="date" VALUE="2022-10-17, Mon" OBJECT="org.freeplane.features.format.FormattedDate|2022-10-17T00:00+0200|date"/>
+<attribute NAME="number" VALUE="123.4" OBJECT="org.freeplane.features.format.FormattedNumber|123.4|#0.####"/>
+<attribute NAME="script1" VALUE="node.text"/>
+<hook NAME="presentations">
+    <presentation NAME="New presentation 1">
+        <slide NAME="New slide 1"/>
+    </presentation>
+</hook>
+<node TEXT="2022-03-23 22:55:00" OBJECT="org.freeplane.features.format.FormattedDate|2022-03-23T22:55+0100|datetime" ID="ID_431015683" LINK="execute:_zenity%20--info%20--text%20Freeplane!" FORMAT="dd/MM/y, HH:mm">
+<arrowlink DESTINATION="ID_719265832" SOURCE_LABEL="source" TARGET_LABEL="target" MIDDLE_LABEL="middle" STARTINCLINATION="222.74999 pt;-138 pt;" ENDINCLINATION="199.49999 pt;-103.5 pt;"/>
+<richcontent CONTENT-TYPE="plain/" TYPE="DETAILS">
+    <text>=node.to.class.simpleName</text>
+</richcontent>
+</node>
 <node TEXT="B" ID="ID_336387774">
 <hook NAME="NodeConditionalStyles">
     <conditional_style ACTIVE="true" STYLE_REF="NearestRight" LAST="false"/>
 </hook>
-<node TEXT="C1 right" STYLE_REF="RightSide" ID="ID_1331015551">
+<richcontent CONTENT-TYPE="xml/" TYPE="DETAILS">
+<html>
+  <head>
+
+  </head>
+  <body>
+    <p>
+      A <b>B</b>&nbsp;C D
+    </p>
+  </body>
+</html></richcontent>
+<attribute_layout NAME_WIDTH="24 pt" VALUE_WIDTH="122.25 pt"/>
+<attribute NAME="url" VALUE="https://google.com/" OBJECT="java.net.URI|https://google.com/"/>
+<node TEXT="C1 right" STYLE_REF="RightSide" POSITION="right" ID="ID_1331015551"><richcontent CONTENT-TYPE="xml/" TYPE="DETAILS">
+<html>
+  <head>
+
+  </head>
+  <body>
+    <p>
+      =id
+    </p>
+  </body>
+</html></richcontent>
 <node TEXT="D1" STYLE_REF="Style01" ID="ID_906009733"/>
 </node>
-<node TEXT="C2 left" STYLE_REF="LeftSide" ID="ID_1878547655">
+<node TEXT="" POSITION="left" ID="ID_1868458745">
+<hook NAME="FirstGroupNode"/>
+</node>
+<node TEXT="C2 left" STYLE_REF="LeftSide" POSITION="left" ID="ID_1878547655">
 <node TEXT=" D2" ID="ID_1065302573"/>
 <node ID="ID_745943307"><richcontent TYPE="NODE">
 
@@ -118,6 +168,38 @@
 </richcontent>
 </node>
 </node>
+<node TEXT="" POSITION="left" ID="ID_821094025">
+<hook NAME="SummaryNode"/>
+<hook NAME="AlwaysUnfoldedNode"/>
+<node TEXT="Summary" ID="ID_526422094"/>
+</node>
+</node>
+<node TEXT="=2" ID="ID_1518479990"/>
+<node TEXT="123.4" OBJECT="java.lang.Double|123.4" ID="ID_719265832" LINK="menuitem:_AboutAction"><richcontent CONTENT-TYPE="plain/" TYPE="DETAILS">
+    <text>=node.to.class.simpleName</text>
+</richcontent>
+</node>
+<node TEXT="N" ID="ID_393713927">
+<node TEXT="1" OBJECT="java.lang.Long|1" STYLE_REF="Style&quot;&lt;([{\^-=$!|]})?*+.&gt;&apos;style" ID="ID_1015856712">
+<arrowlink STYLE_REF="Style&quot;&lt;([{\^-=$!|]})?*+.&gt;&apos;style" DESTINATION="ID_1163724425"/>
+<attribute NAME="a" VALUE="3" OBJECT="org.freeplane.features.format.FormattedNumber|3"/>
+<attribute NAME="b" VALUE="4" OBJECT="org.freeplane.features.format.FormattedNumber|4"/>
+<richcontent CONTENT-TYPE="xml/" TYPE="DETAILS">
+<html>
+  <head>
+
+  </head>
+  <body>
+    <p>
+      =style.name
+    </p>
+  </body>
+</html>
+</richcontent>
+</node>
+<node TEXT="2" OBJECT="java.lang.Long|2" ID="ID_1600659557"/>
+<node TEXT="3" OBJECT="java.lang.Long|3" ID="ID_750265431"/>
+<node TEXT="=&#xa;def siblings = node.parent.children.findAll { it != node }&#xa;def sumAttributeValues(_node) {&#xa;  _node.attributes.collect { attr -&gt; &#xa;    _node[attr.key].num0 &#xa;  }.sum(0)&#xa;}&#xa;siblings.collect { sib -&gt; sumAttributeValues(sib) }.sum()" ID="ID_1163724425"/>
 </node>
 </node>
 </map>

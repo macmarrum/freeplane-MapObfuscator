@@ -112,7 +112,6 @@ LogUtils.info("$NAME: open and obfuscate ${obfuscatedFile.name}")
 def mindMap = c.mapLoader(obfuscatedFile).withView().mindMap
 
 def getCloneLeaders(Node n, List<Node> leaders, List<Node> subtrees, List<Node> clones) {
-    printf('>> getLeaders(%s %s) \n', n.text, n.id)
     if (n in subtrees)
         return leaders
     subtrees.addAll(n.nodesSharingContentAndSubtree)
@@ -158,8 +157,11 @@ class MmXml {
     public static final MAP_STYLE = 'MapStyle'
     public static final STYLES_USER_DEFINED = 'styles.user-defined'
     public static final TEXT = 'TEXT'
-    public static final NAMES_OF_NODES_WITH_STYLE_REF = ['node', 'conditional_style']
-    public static final STYLE_REF = 'STYLE_REF'
+    public static final XML_REPLACEMENTS = ['<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;']
+    public static final SPACE_TEXT_EQ_QUOTE = ' TEXT="'
+    public static final SPACE_STYLE_REF_EQ_QUOTE = ' STYLE_REF="'
+    public static final QUOTE = '"'
+    public static final NAMES_OF_NODES_WITH_STYLE_REF = ['node', 'conditional_style', 'arrowlink']
 
     MmXml(File file) {
         this.file = file
@@ -174,21 +176,39 @@ class MmXml {
         return slurper.parseText(text)
     }
 
-    Map<String, String> getStyleRenamingMap() {
+    Map<String, String> getStyleNameOldToNew() {
         def customStyleNames = getUserDefinedCustomStyleNames()
         def numberOfDigits = (customStyleNames.size() as String).size()
-        def old2new = new HashMap<String, String>(customStyleNames.size())
+        def oldToNew = new LinkedHashMap<String, String>(customStyleNames.size())
         def styleNameFormat = "${STYLE_NAME_PREFIX}%0${numberOfDigits}d"
+        String oldNameInPlainText
         while (true) {
             customStyleNames.eachWithIndex { oldName, i ->
-                old2new[oldName] = sprintf(styleNameFormat, i + 1)
+                oldNameInPlainText = oldName.replace(XML_REPLACEMENTS)
+                oldToNew[oldNameInPlainText] = sprintf(styleNameFormat, i + 1)
             }
-            def foundTheSameNewStyleNameInOldStyleNames = old2new.values().any { newName -> old2new.containsKey(newName) }
+            def foundTheSameNewStyleNameInOldStyleNames = oldToNew.values().any { newName -> oldToNew.containsKey(newName) }
             if (!foundTheSameNewStyleNameInOldStyleNames)
                 break
             styleNameFormat = "_${styleNameFormat}"
         }
-        return old2new
+        return oldToNew
+    }
+
+    Map<String, String> getStyleReplacements() {
+        def oldToNew = getStyleNameOldToNew()
+        def replacements = new LinkedHashMap<String, String>(oldToNew.size() * 2)
+        String key
+        String value
+        oldToNew.each { e ->
+            key = "${SPACE_TEXT_EQ_QUOTE}${e.key}${QUOTE}"
+            value = "${SPACE_TEXT_EQ_QUOTE}${e.value}${QUOTE}"
+            replacements[key] = value
+            key = "${SPACE_STYLE_REF_EQ_QUOTE}${e.key}${QUOTE}"
+            value = "${SPACE_STYLE_REF_EQ_QUOTE}${e.value}${QUOTE}"
+            replacements[key] = value
+        }
+        return replacements
     }
 
     def getMapStyle() {
@@ -199,13 +219,21 @@ class MmXml {
         return getMapStyle().map_styles.stylenode.stylenode.find { it.@LOCALIZED_TEXT == STYLES_USER_DEFINED }
     }
 
-    GPathResult getUserDefinedCustomStyleNodes() {
+    List<NodeChild> getUserDefinedCustomStyleNodes() {
         NodeChildren styleNodes = getUserDefinedStyleParent().stylenode
-        return styleNodes.findAll { NodeChild it -> it.attributes().any { it.key == TEXT } }
+        def nodes = new ArrayList<NodeChild>(styleNodes.size())
+        styleNodes.each { NodeChild nodeChild ->
+            if (nodeChild.attributes().any { it.key == TEXT })
+                nodes << nodeChild
+        }
+        return nodes
     }
 
     List<String> getUserDefinedCustomStyleNames() {
-        return getUserDefinedCustomStyleNodes().collect { it.@TEXT.text() }
+        def nodes = getUserDefinedCustomStyleNodes()
+        def names = new ArrayList<String>(nodes.size())
+        nodes.each { names << it.@TEXT.text() }
+        return names
     }
 }
 
@@ -268,13 +296,8 @@ Save it and proceeding with the obfuscation?'''
     }
 
     static String getTextWithRenamedStyles(File obfuscatedFile) {
-        def styleRenamingMap = new MmXml(obfuscatedFile).styleRenamingMap
-        def text = obfuscatedFile.getText(UTF8)
-        styleRenamingMap.each { e ->
-            text = text.replaceAll("(?<=${MmXml.TEXT}=\")${e.key}(?=\")", e.value)
-            text = text.replaceAll("(?<=${MmXml.STYLE_REF}=\")${e.key}(?=\")", e.value)
-        }
-        return text
+        def styleReplacements = new MmXml(obfuscatedFile).styleReplacements
+        return obfuscatedFile.getText(UTF8).replace(styleReplacements)
     }
 
     static String x(String text) {
