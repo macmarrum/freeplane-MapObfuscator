@@ -8,7 +8,6 @@ import org.freeplane.api.MindMap
 import org.freeplane.api.Node
 import org.freeplane.core.ui.components.UITools
 import org.freeplane.core.util.HtmlUtils
-import org.freeplane.core.util.Hyperlink
 import org.freeplane.core.util.LogUtils
 import org.freeplane.features.map.NodeModel
 import org.freeplane.features.mode.Controller
@@ -112,22 +111,31 @@ if (Opt.mo_obfuscate_style_names) {
 LogUtils.info("$NAME: open and obfuscate ${obfuscatedFile.name}")
 def mindMap = c.mapLoader(obfuscatedFile).withView().mindMap
 
-def getCloneLeaders(Node n, List<Node> leaders, List<Node> subtrees, List<Node> clones) {
-    if (n in subtrees)
-        return leaders
-    subtrees.addAll(n.nodesSharingContentAndSubtree)
+def findSinglesAndCloneLeaders(Node n, List<Node> singlesAndLeaders, List<Node> subtrees, List<Node> clones) {
+//    printf('>> findSinglesAndCloneLeaders %s %s ', n.id, n.shortText)
+    if (n in subtrees) {
+//        println('- subtree clone (skipping it and its children)')
+        return singlesAndLeaders
+    }
+    def nodesSharingContentAndSubtree = n.nodesSharingContentAndSubtree
+    subtrees.addAll(nodesSharingContentAndSubtree)
     if (n !in clones) {
-        leaders << n
-        clones.addAll(n.nodesSharingContent)
+//        printf('- single/leader')
+        singlesAndLeaders << n
+        clones.addAll(n.nodesSharingContent - nodesSharingContentAndSubtree)
+    } else {
+//        printf('- clone (skipping)')
     }
-    n.children.each { Node it ->
-        return getCloneLeaders(it, leaders, subtrees, clones)
+    def children = n.children
+//    println(" - processing children (${children.size()})")
+    children.each { Node it ->
+        findSinglesAndCloneLeaders(it, singlesAndLeaders, subtrees, clones)
     }
-    return leaders
+    return singlesAndLeaders
 }
 
-def cloneLeaders = getCloneLeaders(mindMap.root, new LinkedList<Node>(), new LinkedList<Node>(), new LinkedList<Node>())
-cloneLeaders.each { Node n ->
+def singlesAndCloneLeaders = findSinglesAndCloneLeaders(mindMap.root, new LinkedList<Node>(), new LinkedList<Node>(), new LinkedList<Node>())
+singlesAndCloneLeaders.each { Node n ->
     if (Opt.mo_obfuscate_core)
         MapObfuscatorUtils.obfuscateCore(n)
     if (Opt.mo_obfuscate_details)
@@ -159,9 +167,8 @@ class MmXml {
     public static final STYLES_USER_DEFINED = 'styles.user-defined'
     public static final TEXT = 'TEXT'
     public static final XML_REPLACEMENTS = ['<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;']
-    public static final SPACE_TEXT_EQ_QUOTE = ' TEXT="'
-    public static final SPACE_STYLE_REF_EQ_QUOTE = ' STYLE_REF="'
-    public static final QUOTE = '"'
+    public static final TEXT_FORMAT = ' TEXT="%s"'
+    public static final STYLE_REF_FORMAT = ' STYLE_REF="%s"'
     public static final NAMES_OF_NODES_WITH_STYLE_REF = ['node', 'conditional_style', 'arrowlink']
 
     MmXml(File file) {
@@ -169,12 +176,9 @@ class MmXml {
         map = parseXml(file)
     }
 
-    static GPathResult parseXml(File file) {
-        def slurper = new XmlSlurper()
-        slurper.setFeature('http://apache.org/xml/features/disallow-doctype-decl', false)
-        def doctype = '<!DOCTYPE map [<!ENTITY nbsp "&#160;">]>'
-        def text = doctype + file.getText(UTF8)
-        return slurper.parseText(text)
+    static parseXml(File file) {
+        def text = '<!DOCTYPE map [<!ENTITY nbsp "&#160;">]>' + file.getText(UTF8)
+        return new XmlSlurper(false, false, true).parseText(text)
     }
 
     Map<String, String> getStyleNameOldToNew() {
@@ -188,8 +192,8 @@ class MmXml {
                 oldNameInPlainText = oldName.replace(XML_REPLACEMENTS)
                 oldToNew[oldNameInPlainText] = sprintf(styleNameFormat, i + 1)
             }
-            def foundTheSameNewStyleNameInOldStyleNames = oldToNew.values().any { newName -> oldToNew.containsKey(newName) }
-            if (!foundTheSameNewStyleNameInOldStyleNames)
+            def foundNewStyleNameInOldStyleNames = oldToNew.values().any { newName -> oldToNew.containsKey(newName) }
+            if (!foundNewStyleNameInOldStyleNames)
                 break
             styleNameFormat = "_${styleNameFormat}"
         }
@@ -202,11 +206,11 @@ class MmXml {
         String key
         String value
         oldToNew.each { e ->
-            key = "${SPACE_TEXT_EQ_QUOTE}${e.key}${QUOTE}"
-            value = "${SPACE_TEXT_EQ_QUOTE}${e.value}${QUOTE}"
+            key = sprintf(TEXT_FORMAT, e.key)
+            value = sprintf(TEXT_FORMAT, e.value)
             replacements[key] = value
-            key = "${SPACE_STYLE_REF_EQ_QUOTE}${e.key}${QUOTE}"
-            value = "${SPACE_STYLE_REF_EQ_QUOTE}${e.value}${QUOTE}"
+            key = sprintf(STYLE_REF_FORMAT, e.key)
+            value = sprintf(STYLE_REF_FORMAT, e.value)
             replacements[key] = value
         }
         return replacements
@@ -220,21 +224,16 @@ class MmXml {
         return getMapStyle().map_styles.stylenode.stylenode.find { it.@LOCALIZED_TEXT == STYLES_USER_DEFINED }
     }
 
-    List<NodeChild> getUserDefinedCustomStyleNodes() {
+    /** Assumption: GPathResult/NodeChildren returned by findAll contains NodeChild elements in the order of appearance
+     */
+    GPathResult getUserDefinedCustomStyleNodes() {
         NodeChildren styleNodes = getUserDefinedStyleParent().stylenode
-        def nodes = new ArrayList<NodeChild>(styleNodes.size())
-        styleNodes.each { NodeChild nodeChild ->
-            if (nodeChild.attributes().any { it.key == TEXT })
-                nodes << nodeChild
-        }
-        return nodes
+        return styleNodes.findAll { NodeChild it -> it.attributes().any { it.key == TEXT } }
     }
 
     List<String> getUserDefinedCustomStyleNames() {
         def nodes = getUserDefinedCustomStyleNodes()
-        def names = new ArrayList<String>(nodes.size())
-        nodes.each { names << it.@TEXT.text() }
-        return names
+        return nodes.collect(new ArrayList<String>(nodes.size()), { it.@TEXT.text() })
     }
 }
 
@@ -263,13 +262,14 @@ class MapObfuscatorUtils {
     private static final PERCENT = '%'
     private static final HTML = '<html>'
     private static final EQ = '='
-    private static final RX_W = ~/\w/
+    private static final RX_ALNUM_OR_NOT_ASCII = ~/\p{Alnum}|[^\p{ASCII}]/
     private static final OBFUSCATED_FORMULA = /='obfuscated formula'/
     private static final SCRIPT = 'script'
     private static final OBFUSCATED_SCRIPT = '// obfuscated script'
     private static final CONNECTOR_LABEL_NAMES = ['sourceLabel', 'middleLabel', 'targetLabel']
     private static final XDATE = new FSBCImpl().format(Date.parse('yyyy-MM-dd', '1970-01-01'), Opt.date_format)
     private static final XNUMBER = 123
+    private static final DOT = /\./
 
     static void informAlreadyObfuscated() {
         def title = 'Already obfuscated'
@@ -279,8 +279,7 @@ class MapObfuscatorUtils {
 
     static boolean confirmSaveMap(NodeModel nodeModel) {
         def title = 'Save map?'
-        def message = '''The mindmap is modified
-Save it and proceeding with the obfuscation?'''
+        def message = 'The mindmap is modified\nSave it and proceeding with the obfuscation?'
         def resp = UITools.showConfirmDialog(nodeModel, message, title, JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE)
         return resp == 0
     }
@@ -302,7 +301,7 @@ Save it and proceeding with the obfuscation?'''
     }
 
     static String x(String text) {
-        return !text ? text : text.replaceAll(RX_W, 'x')
+        return !text ? text : text.replaceAll(RX_ALNUM_OR_NOT_ASCII, 'x')
     }
 
     static String xHtml(String text) {
@@ -318,7 +317,7 @@ Save it and proceeding with the obfuscation?'''
                 isEntityInProgress = true
             else if (isEntityInProgress && it == SCL)
                 isEntityInProgress = false
-            if (!(isTagInProgress || isEntityInProgress) && it ==~ RX_W)
+            if (!(isTagInProgress || isEntityInProgress) && it ==~ RX_ALNUM_OR_NOT_ASCII)
                 list[i] = 'x'
         }
         return list.join('')
@@ -439,10 +438,11 @@ Save it and proceeding with the obfuscation?'''
                     attr.value = XDATE
                 else if (value instanceof Number)
                     attr.value = XNUMBER
-                else if (value instanceof Hyperlink) {
-                    def stringUri = (attr.value as Hyperlink).uri.toString()
+                else if (value.class.name == 'org.freeplane.core.util.Hyperlink' || value instanceof URI) {
+                    // Hyperlink doesn't exist yet in 1.8.0; URI is used
+                    def stringUri = attr.value.toString()
                     if (!(stringUri.startsWith(HASH) || stringUri.startsWith(MENUITEM) || stringUri.startsWith(EXECUTE)))
-                        attr.value = _obfuscateStringUri((attr.value as Hyperlink).toString()).toURI()
+                        attr.value = _obfuscateStringUri(stringUri).toURI()
                 }
             } else if (Opt.mo_obfuscate_scripts)
                 attr.value = OBFUSCATED_SCRIPT
@@ -471,7 +471,7 @@ Save it and proceeding with the obfuscation?'''
     }
 
     static List<String> splitExtension(String filename) {
-        return filename.reverse().split(/\./, 2).collect { it.reverse() }.reverse()
+        return filename.reverse().split(DOT, 2).collect { it.reverse() }.reverse()
     }
 }
 // @ExecutionModes({ON_SINGLE_NODE})

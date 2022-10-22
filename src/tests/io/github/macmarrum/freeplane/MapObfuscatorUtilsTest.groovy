@@ -10,8 +10,39 @@ import static io.github.macmarrum.freeplane.MapObfuscatorUtils.xHtml
 
 class MapObfuscatorUtilsTest {
 
-    static @SourceURI URI sourceUri
+    static @SourceURI
+    URI sourceUri
     static me = Paths.get(sourceUri)
+
+    @Test
+    void x() {
+        def input = $/
+`1234567890-=
+~!@#$%^&*()_+
+qwertyuiop[]\
+QWERTYUIOP{}|
+≠²³¢€½§·«»–
+¡¿£¼‰∧≈¾±°—
+;':" ,./<>?
+ä ö ü ß
+ąćęłńóśźż
+ĄĆĘŁŃÓŚŹŻ
+/$
+        def expected = $/
+`xxxxxxxxxx-=
+~!@#$%^&*()_+
+xxxxxxxxxx[]\
+xxxxxxxxxx{}|
+xxxxxxxxxxx
+xxxxxxxxxxx
+;':" ,./<>?
+x x x x
+xxxxxxxxx
+xxxxxxxxx
+/$
+        def actual = MapObfuscatorUtils.x(input)
+        assert expected == actual
+    }
 
     @Test
     void _obfuscateUriExceptLastSegmentsAndHash_0() {
