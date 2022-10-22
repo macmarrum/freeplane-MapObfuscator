@@ -12,7 +12,7 @@ def version = LocalDate.now().format('Y.MM.dd')
 def template = """\
 version=${version}
 downloadUrl=https://github.com/macmarrum/freeplane-MapObfuscator/releases/download/v${version}/MapObfuscator-${version}.addon.mm
-freeplaneVersionFrom=1.7.10
+freeplaneVersionFrom=1.8.0
 """
 println template
 versionPropertiesFile.text = template
