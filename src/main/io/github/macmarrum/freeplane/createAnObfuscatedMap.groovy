@@ -416,7 +416,7 @@ class MapObfuscatorUtils {
         return newUriString
     }
 
-    static String xUri(text) {
+    static String xUri(String text) {
         def parts = text.split(PERCENT)
         if (parts.size() > 1) {
             int i = 0
