@@ -5,9 +5,6 @@ import org.junit.jupiter.api.Test
 
 import java.nio.file.Paths
 
-import static io.github.macmarrum.freeplane.MapObfuscatorUtils._obfuscateUriExceptLastSegmentsAndHash
-import static io.github.macmarrum.freeplane.MapObfuscatorUtils.xHtml
-
 class MapObfuscatorUtilsTest {
 
     static @SourceURI
@@ -17,46 +14,70 @@ class MapObfuscatorUtilsTest {
     @Test
     void x() {
         def input = $/
-`1234567890-=
-~!@#$%^&*()_+
-qwertyuiop[]\
-QWERTYUIOP{}|
-≠²³¢€½§·«»–
-¡¿£¼‰∧≈¾±°—
-;':" ,./<>?
-ä ö ü ß
-ąćęłńóśźż
-ĄĆĘŁŃÓŚŹŻ
-/$
+            `1234567890-=
+            ~!@#$%^&*()_+
+            qwertyuiop[]\
+            QWERTYUIOP{}|
+            ≠²³¢€½§·«»–
+            ¡¿£¼‰∧≈¾±°—
+            ;':" ,./<>?
+            ä ö ü ß
+            ąćęłńóśźż
+            ĄĆĘŁŃÓŚŹŻ
+            /$.stripIndent()
         def expected = $/
-`xxxxxxxxxx-=
-~!@#$%^&*()_+
-xxxxxxxxxx[]\
-xxxxxxxxxx{}|
-xxxxxxxxxxx
-xxxxxxxxxxx
-;':" ,./<>?
-x x x x
-xxxxxxxxx
-xxxxxxxxx
-/$
+            `xxxxxxxxxx-=
+            ~!@#$%^&*()_+
+            xxxxxxxxxx[]\
+            xxxxxxxxxx{}|
+            xxxxxxxxxxx
+            xxxxxxxxxxx
+            ;':" ,./<>?
+            x x x x
+            xxxxxxxxx
+            xxxxxxxxx
+            /$.stripIndent()
         def actual = MapObfuscatorUtils.x(input)
         assert expected == actual
     }
 
     @Test
-    void _obfuscateUriExceptLastSegmentsAndHash_0() {
-        def input = 'file:/%20/deab%20c/def.txt'
-        def expected = 'file:/%20/xxxx%20x/xxx.xxx'
-        def actual = _obfuscateUriExceptLastSegmentsAndHash(input, 0)
+    void xUri() {
+        def input = '//duckduckgo.com:8080/bangs?a=1&b=2'
+        def expected = '//xxxxxxxxxx.xxx:xxxx/xxxxx?x=x&x=x'
+        def actual = MapObfuscatorUtils.xUri(input)
         assert expected == actual
     }
 
     @Test
-    void _obfuscateUriExceptLastSegmentsAndHash_1() {
-        def input = 'file:/%20/deab%20c/def.txt'
-        def expected = 'file:/%20/xxxx%20x/def.txt'
-        def actual = _obfuscateUriExceptLastSegmentsAndHash(input, 1)
+    void _obfuscateSspExceptLastSegments_0() {
+        def input = '//duckduckgo.com'
+        def expected = '//xxxxxxxxxx.xxx'
+        def actual = MapObfuscatorUtils._obfuscateSspExceptLastSegments(input, 0)
+        assert expected == actual
+    }
+
+    @Test
+    void _obfuscateSspExceptLastSegments_1() {
+        def input = '//duckduckgo.com/bangs'
+        def expected = '//xxxxxxxxxx.xxx/bangs'
+        def actual = MapObfuscatorUtils._obfuscateSspExceptLastSegments(input, 1)
+        assert expected == actual
+    }
+
+    @Test
+    void _obfuscateSspExceptLastSegments_optionB_0() {
+        def input = '/%20/deab%20c/def.txt'
+        def expected = '/%20/xxxx%20x/xxx.xxx'
+        def actual = MapObfuscatorUtils._obfuscateSspExceptLastSegments(input, 0)
+        assert expected == actual
+    }
+
+    @Test
+    void _obfuscateSspExceptLastSegments_optionB_1() {
+        def input = '/%20/deab%20c/def.txt'
+        def expected = '/%20/xxxx%20x/def.txt'
+        def actual = MapObfuscatorUtils._obfuscateSspExceptLastSegments(input, 1)
         assert expected == actual
     }
 
@@ -82,15 +103,19 @@ xxxxxxxxx
     </p>
   </body>
 </html>'''
-        def actual = xHtml(input)
+        def actual = MapObfuscatorUtils.xHtml(input)
         assert expected == actual
     }
 
     @Test
-    void obfuscateStyleNames() {
-        def input = me.parent.resolve('obfuscateStyleNames_input.txt').toFile()
-        def expected = me.parent.resolve('obfuscateStyleNames_expected.txt').getText('UTF-8')
-        def actual = MapObfuscatorUtils.getTextWithRenamedStyles(input)
+    void obfuscateStyleNamesAndOrTemplatePaths_both() {
+        Opt.mo_obfuscate_style_names = true
+        Opt.mo_obfuscate_template_paths = true
+        Opt.mo_preserve_last_segment_in_links = true
+        def input = me.parent.resolve('obfuscateStyleNamesAndOrTemplatePaths_input.txt').toFile()
+        def expected = me.parent.resolve('obfuscateStyleNamesAndOrTemplatePaths_expected.txt').getText('UTF-8')
+        def actual = MapObfuscatorUtils.getTextWithRenamedStylesAndOrTemplatePaths(input)
+        // me.parent.resolve('obfuscateStyleNames_actual.txt').setText(actual, 'UTF-8')
         assert expected == actual
     }
 

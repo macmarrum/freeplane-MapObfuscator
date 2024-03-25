@@ -7,11 +7,11 @@
 <hook NAME="accessories/plugins/AutomaticLayout.properties" VALUE="ALL"/>
 <hook NAME="MapStyle" background="#3c3836">
     <conditional_styles>
-        <conditional_style ACTIVE="true" STYLE_REF="NearestRight" LAST="false">
+        <conditional_style ACTIVE="true" STYLE_REF="_Style04" LAST="false">
             <node_contains_condition VALUE="XYZ" ITEM="filter_node"/>
         </conditional_style>
     </conditional_styles>
-    <properties show_icon_for_attributes="true" edgeColorConfiguration="#808080ff,#ff0000ff,#0000ffff,#00ff00ff,#ff00ffff,#00ffffff,#7c0000ff,#00007cff,#007c00ff,#7c007cff,#007c7cff,#7c7c00ff" show_note_icons="true" associatedTemplateLocation="template:/dark_gruvbox_template.mm" fit_to_viewport="false"/>
+    <properties show_icon_for_attributes="true" edgeColorConfiguration="#808080ff,#ff0000ff,#0000ffff,#00ff00ff,#ff00ffff,#00ffffff,#7c0000ff,#00007cff,#007c00ff,#7c007cff,#007c7cff,#7c7c00ff" show_note_icons="true" associatedTemplateLocation="template:/dark_gruvbox_template.mm" followedTemplateLocation="file:/xxxx/x/xxxxxxxxx/test-standard-toBeFollowed.mm" fit_to_viewport="false" followedMapLastTime="1711351229314"/>
 
 <map_styles>
 <stylenode LOCALIZED_TEXT="styles.root_node" STYLE="oval" UNIFORM_SHAPE="true" VGAP_QUANTITY="24 pt">
@@ -41,26 +41,26 @@
 <arrowlink COLOR="#cc241d" TRANSPARENCY="255" DESTINATION="ID_749235638"/>
 <font SIZE="12" ITALIC="false"/>
 </stylenode>
-<stylenode TEXT="LeftSide">
+<stylenode TEXT="_Style01">
 <icon BUILTIN="emoji-2640"/>
 </stylenode>
-<stylenode TEXT="RightSide">
+<stylenode TEXT="_Style02">
 <icon BUILTIN="emoji-2642"/>
 </stylenode>
-<stylenode TEXT="NearestLeft">
+<stylenode TEXT="_Style03">
 <icon BUILTIN="back"/>
 </stylenode>
-<stylenode TEXT="NearestRight">
+<stylenode TEXT="_Style04">
 <icon BUILTIN="forward"/>
 </stylenode>
-<stylenode TEXT="Style01" ID="ID_1677103407" COLOR="#ff99ff" BACKGROUND_COLOR="#660066">
+<stylenode TEXT="_Style05" ID="ID_1677103407" COLOR="#ff99ff" BACKGROUND_COLOR="#660066">
 <arrowlink DESTINATION="ID_1677103407"/>
 </stylenode>
-<stylenode TEXT="aa"/>
-<stylenode TEXT="bb"/>
-<stylenode TEXT="cc"/>
-<stylenode TEXT="dd"/>
-<stylenode TEXT="Style&quot;&lt;([{\^-=$!|]})?*+.&gt;&apos;style" ID="ID_485953564" COLOR="#ccffff" BACKGROUND_COLOR="#0000cc">
+<stylenode TEXT="_Style06"/>
+<stylenode TEXT="_Style07"/>
+<stylenode TEXT="_Style08"/>
+<stylenode TEXT="_Style09"/>
+<stylenode TEXT="_Style10" ID="ID_485953564" COLOR="#ccffff" BACKGROUND_COLOR="#0000cc">
 <arrowlink COLOR="#0000cc" DESTINATION="ID_485953564"/>
 </stylenode>
 </stylenode>
@@ -120,7 +120,7 @@
 </node>
 <node TEXT="B" ID="ID_336387774">
 <hook NAME="NodeConditionalStyles">
-    <conditional_style ACTIVE="true" STYLE_REF="NearestRight" LAST="false"/>
+    <conditional_style ACTIVE="true" STYLE_REF="_Style04" LAST="false"/>
 </hook>
 <richcontent CONTENT-TYPE="xml/" TYPE="DETAILS">
 <html>
@@ -135,7 +135,7 @@
 </html></richcontent>
 <attribute_layout NAME_WIDTH="24 pt" VALUE_WIDTH="122.25 pt"/>
 <attribute NAME="url" VALUE="https://google.com/" OBJECT="java.net.URI|https://google.com/"/>
-<node TEXT="C1 right" STYLE_REF="RightSide" POSITION="right" ID="ID_1331015551"><richcontent CONTENT-TYPE="xml/" TYPE="DETAILS">
+<node TEXT="C1 right" STYLE_REF="_Style02" POSITION="right" ID="ID_1331015551"><richcontent CONTENT-TYPE="xml/" TYPE="DETAILS">
 <html>
   <head>
 
@@ -146,12 +146,12 @@
     </p>
   </body>
 </html></richcontent>
-<node TEXT="D1" STYLE_REF="Style01" ID="ID_906009733"/>
+<node TEXT="D1" STYLE_REF="_Style05" ID="ID_906009733"/>
 </node>
 <node TEXT="" POSITION="left" ID="ID_1868458745">
 <hook NAME="FirstGroupNode"/>
 </node>
-<node TEXT="C2 left" STYLE_REF="LeftSide" POSITION="left" ID="ID_1878547655">
+<node TEXT="C2 left" STYLE_REF="_Style01" POSITION="left" ID="ID_1878547655">
 <node TEXT=" D2" ID="ID_1065302573"/>
 <node ID="ID_745943307"><richcontent TYPE="NODE">
 
@@ -180,8 +180,8 @@
 </richcontent>
 </node>
 <node TEXT="N" ID="ID_393713927">
-<node TEXT="1" OBJECT="java.lang.Long|1" STYLE_REF="Style&quot;&lt;([{\^-=$!|]})?*+.&gt;&apos;style" ID="ID_1015856712">
-<arrowlink STYLE_REF="Style&quot;&lt;([{\^-=$!|]})?*+.&gt;&apos;style" DESTINATION="ID_1163724425"/>
+<node TEXT="1" OBJECT="java.lang.Long|1" STYLE_REF="_Style10" ID="ID_1015856712">
+<arrowlink STYLE_REF="_Style10" DESTINATION="ID_1163724425"/>
 <attribute NAME="a" VALUE="3" OBJECT="org.freeplane.features.format.FormattedNumber|3"/>
 <attribute NAME="b" VALUE="4" OBJECT="org.freeplane.features.format.FormattedNumber|4"/>
 <richcontent CONTENT-TYPE="xml/" TYPE="DETAILS">

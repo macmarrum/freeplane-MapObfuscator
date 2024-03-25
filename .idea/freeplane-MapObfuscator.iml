@@ -10,4 +10,7 @@
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" name="freeplane-bin" level="project" />
   </component>
+  <component name="SonarLintModuleSettings">
+    <option name="uniqueId" value="9288107b-a488-4d18-b502-6e275386c0d1" />
+  </component>
 </module>

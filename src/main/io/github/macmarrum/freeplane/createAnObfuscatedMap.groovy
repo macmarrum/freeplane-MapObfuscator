@@ -1,3 +1,19 @@
+/*
+ * Copyright (C) 2022-2024   macmarrum
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 package io.github.macmarrum.freeplane
 
 import groovy.xml.XmlSlurper
@@ -44,6 +60,7 @@ class Opt {
     public static mo_obfuscate_formulas = true
     public static mo_obfuscate_scripts = true
     public static mo_obfuscate_style_names = true
+    public static mo_obfuscate_template_paths = true
     public static date_format = 'yyyy-MM-dd'
 }
 
@@ -53,13 +70,13 @@ Opt.class.declaredFields.each {
     if (!it.synthetic) {
         switch (Opt."${it.name}".class) {
             case Boolean:
-                Opt."${it.name}" = config.getBooleanProperty(it.name.replaceFirst(RX_MO, MAP_OBFUSCATOR))
+                Opt."${it.name}" = config.getProperty(it.name.replaceFirst(RX_MO, MAP_OBFUSCATOR), Opt."${it.name}" as String) == 'true'
                 break
             case Integer:
-                Opt."${it.name}" = config.getIntProperty(it.name.replaceFirst(RX_MO, MAP_OBFUSCATOR))
+                Opt."${it.name}" = config.getIntProperty(it.name.replaceFirst(RX_MO, MAP_OBFUSCATOR), Opt."${it.name}")
                 break
             case String:
-                Opt."${it.name}" = config.getProperty(it.name.replaceFirst(RX_MO, MAP_OBFUSCATOR))
+                Opt."${it.name}" = config.getProperty(it.name.replaceFirst(RX_MO, MAP_OBFUSCATOR), Opt."${it.name}")
                 break
         }
     }
@@ -83,16 +100,16 @@ if (stem.endsWith(OBFUSCATED_SUFFIX)) {
     return
 }
 
-def obfuscatedName = "$stem$OBFUSCATED_SUFFIX.$ext".toString()
-def obfuscatedStem = "$stem$OBFUSCATED_SUFFIX".toString()
+def obfuscatedName = "$stem$OBFUSCATED_SUFFIX.$ext" as String
+def obfuscatedStem = "$stem$OBFUSCATED_SUFFIX" as String
 def obfuscatedFile = new File(file.parentFile, obfuscatedName)
 
-def force = false
+def noForce = false
 def disallowInteraction = false
 def openObfuscated = c.openMindMaps.find { MindMap it -> it.name == obfuscatedStem }
 if (openObfuscated) {
     openObfuscated.save(disallowInteraction)
-    openObfuscated.close(force, allowInteraction)
+    openObfuscated.close(noForce, allowInteraction)
 }
 
 def isOkToObfuscate = true
@@ -103,31 +120,36 @@ if (!isOkToObfuscate)
     return
 Files.copy(file.toPath(), obfuscatedFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
 
-if (Opt.mo_obfuscate_style_names) {
-    LogUtils.info("$NAME: search and replace in ${obfuscatedFile.name}")
-    MapObfuscatorUtils.obfuscateStyleNames(obfuscatedFile)
+if (Opt.mo_obfuscate_template_paths || Opt.mo_obfuscate_style_names) {
+    def msg = []
+    if (Opt.mo_obfuscate_template_paths)
+        msg << 'template paths'
+    if (Opt.mo_obfuscate_style_names)
+        msg << 'style names'
+    LogUtils.info("$NAME: obfuscating ${msg.join(', ')} in ${obfuscatedFile.name}")
+    MapObfuscatorUtils.obfuscateStyleNamesAndOrTemplatePaths(obfuscatedFile)
 }
 
-LogUtils.info("$NAME: open and obfuscate ${obfuscatedFile.name}")
+LogUtils.info("$NAME: opening ${obfuscatedFile.name}")
 def mindMap = c.mapLoader(obfuscatedFile).withView().mindMap
 
 def findSinglesAndCloneLeaders(Node n, List<Node> singlesAndLeaders, List<Node> subtrees, List<Node> clones) {
-//    printf('>> findSinglesAndCloneLeaders %s %s ', n.id, n.shortText)
+    //printf('>> findSinglesAndCloneLeaders %s %s ', n.id, n.shortText)
     if (n in subtrees) {
-//        println('- subtree clone (skipping it and its children)')
+        //println('- subtree clone (skipping it and its children)')
         return singlesAndLeaders
     }
     def nodesSharingContentAndSubtree = n.nodesSharingContentAndSubtree
     subtrees.addAll(nodesSharingContentAndSubtree)
     if (n !in clones) {
-//        printf('- single/leader')
+        //printf('- single/leader')
         singlesAndLeaders << n
         clones.addAll(n.nodesSharingContent - nodesSharingContentAndSubtree)
     } else {
-//        printf('- clone (skipping)')
+        //printf('- clone (skipping)')
     }
     def children = n.children
-//    println(" - processing children (${children.size()})")
+    //println(" - processing children (${children.size()})")
     children.each { Node it ->
         findSinglesAndCloneLeaders(it, singlesAndLeaders, subtrees, clones)
     }
@@ -143,7 +165,7 @@ singlesAndCloneLeaders.each { Node n ->
     if (Opt.mo_obfuscate_note)
         MapObfuscatorUtils.obfuscateNote(n)
     if (Opt.mo_obfuscate_links)
-        MapObfuscatorUtils.obfuscateLinks(n)
+        MapObfuscatorUtils.obfuscateLink(n)
     if (Opt.mo_obfuscate_attribute_values)
         MapObfuscatorUtils.obfuscateAttributeValues(n)
     if (Opt.mo_obfuscate_connectors)
@@ -216,24 +238,35 @@ class MmXml {
         return replacements
     }
 
-    def getMapStyle() {
+    /** In the first-level {@code <node ...>} element(s), find a {@code <hook ...>} which has the attribute {@code NAME="MapStyle"} */
+    def getHookMapStyle() {
         return map.node.hook.find { it.@NAME == MAP_STYLE }
     }
 
-    def getUserDefinedStyleParent() {
-        return getMapStyle().map_styles.stylenode.stylenode.find { it.@LOCALIZED_TEXT == STYLES_USER_DEFINED }
+    def getUserDefinedStylesParent() {
+        return hookMapStyle.map_styles.stylenode.stylenode.find { it.@LOCALIZED_TEXT == STYLES_USER_DEFINED }
     }
 
-    /** Assumption: GPathResult/NodeChildren returned by findAll contains NodeChild elements in the order of appearance
+    /** Find styles created by User, as opposed to styles that come with Freeplane,
+     * like {@code <stylenode LOCALIZED_TEXT="styles.important">}.
+     * Assumption: GPathResult/NodeChildren returned by findAll has NodeChild elements in the order of appearance
      */
     GPathResult getUserDefinedCustomStyleNodes() {
-        NodeChildren styleNodes = getUserDefinedStyleParent().stylenode
+        NodeChildren styleNodes = getUserDefinedStylesParent().stylenode
         return styleNodes.findAll { NodeChild it -> it.attributes().any { it.key == TEXT } }
     }
 
     List<String> getUserDefinedCustomStyleNames() {
         def nodes = getUserDefinedCustomStyleNodes()
         return nodes.collect(new ArrayList<String>(nodes.size()), { it.@TEXT.text() })
+    }
+
+    String getAssociatedTemplate() {
+        return hookMapStyle.properties.@associatedTemplateLocation
+    }
+
+    String getFollowedMap() {
+        return hookMapStyle.properties.@followedTemplateLocation
     }
 }
 
@@ -251,14 +284,18 @@ class MapObfuscatorUtils {
     private static final GT = '>'
     private static final AMP = '&'
     private static final SCL = ';'
-    private static final MENUITEM = 'menuitem:'
-    private static final EXECUTE = 'execute:'
     private static final RX_HEX = ~/^[0-9A-Fa-f]{2}/
     private static final RX_HREF_SRC = ~/(?i)(?:(?<= href=")|(?<= src="))([^"]+)(?=")/
-    private static final MAILTO = 'mailto:'
-    private static final AT = '@'
+    private static final RX_SCHEME_AT_START = ~/(?i)^[a-z][a-z0-9.+-]+:.*/
+    private static final COLON = ':'
+    private static final MENUITEM = 'menuitem'
+    private static final EXECUTE = 'execute'
+    private static final MAILTO = 'mailto'
+    private static final FILE = 'file'
+    private static final TEMPLATE = 'template'
     private static final HASH = '#'
     private static final SLASH = '/'
+    private static final DOUBLE_SLASH = '//'
     private static final PERCENT = '%'
     private static final HTML = '<html>'
     private static final EQ = '='
@@ -270,6 +307,8 @@ class MapObfuscatorUtils {
     private static final XDATE = new FSBCImpl().format(Date.parse('yyyy-MM-dd', '1970-01-01'), Opt.date_format)
     private static final XNUMBER = 123
     private static final DOT = /\./
+    private static final ASSOCIATED_TEMPLATE_LOCATION = 'associatedTemplateLocation'
+    private static final FOLLOWED_TEMPLATE_LOCATION = 'followedTemplateLocation'
 
     static void informAlreadyObfuscated() {
         def title = 'Already obfuscated'
@@ -289,15 +328,6 @@ class MapObfuscatorUtils {
         def msg = "The file already exists:\n${obfuscatedFile.name}\nOverwrite it?"
         def decision = UITools.showConfirmDialog(sourceModel, msg, title, JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE)
         return decision == 0
-    }
-
-    static void obfuscateStyleNames(File obfuscatedFile) {
-        obfuscatedFile.setText(getTextWithRenamedStyles(obfuscatedFile), UTF8)
-    }
-
-    static String getTextWithRenamedStyles(File obfuscatedFile) {
-        def styleReplacements = new MmXml(obfuscatedFile).styleReplacements
-        return obfuscatedFile.getText(UTF8).replace(styleReplacements)
     }
 
     static String x(String text) {
@@ -378,45 +408,78 @@ class MapObfuscatorUtils {
         }
     }
 
-    static void obfuscateLinks(Node n) {
+    static void obfuscateLink(Node n) {
         def uri = n.link.uri
-        if (uri.is(null))
-            return
-        def stringUri = uri.toString()
-        if (!stringUri.startsWith(MENUITEM) && !stringUri.startsWith(EXECUTE))
-            n.link.uri = _obfuscateStringUri(stringUri).toURI()
+        if (uri)
+            n.link.uri = _obfuscateUri(uri)
     }
 
     static String _obfuscateStringUri(String stringUri) {
         if (stringUri.startsWith(HASH))
             return stringUri
+        String scheme
+        String rest
+        String schemeSpecificPart
+        String fragment
+        if (stringUri ==~ RX_SCHEME_AT_START)
+            (scheme, rest) = stringUri.split(COLON, 2)
+        else
+            rest = stringUri
+        if (rest.contains(HASH))
+            (schemeSpecificPart, fragment) = rest.split(HASH)
+        else
+            schemeSpecificPart = rest
         int preserveLastXSegments = Opt.mo_preserve_last_segment_in_links ? 1 : 0
-        def isHttp = stringUri.matches('^https?://.*')
-        def strippedUri = stringUri.replaceAll('(^https?://|/$)', '')
-        if (isHttp && !strippedUri.contains(SLASH))
-            preserveLastXSegments = 0  // no path; obfuscate http host
-        return _obfuscateUriExceptLastSegmentsAndHash(stringUri, preserveLastXSegments)
+        //if (isFileOrTemplate(scheme))
+        //    preserveLastXSegments = 0
+        if (isHostOnlyHttp(scheme, schemeSpecificPart))
+            preserveLastXSegments = 0 // no path; obfuscate http host, irrespective of mo_preserve_last_segment_in_links
+        return "${scheme ? scheme + COLON : ''}${_obfuscateSspExceptLastSegments(schemeSpecificPart, preserveLastXSegments)}${fragment ? HASH + fragment : ''}" as String
     }
 
-    static String _obfuscateUriExceptLastSegmentsAndHash(String stringUri, int preserveLastXSegments = 0) {
-        String newUriString
-        if (stringUri.startsWith(MAILTO))
-            newUriString = MAILTO + stringUri[7..-1].split(AT).collect { xUri(it) }.join(AT)
-        else if (stringUri.contains(SLASH)) {
-            def pathHash = stringUri.split(HASH)
-            def uriArray = pathHash[0].split(SLASH)
-            def uriArraySize = uriArray.size()
-            uriArray.eachWithIndex { part, i ->
-                if (i > 0 && i < uriArraySize - preserveLastXSegments)
-                    uriArray[i] = xUri(part)
-            }
-            newUriString = uriArray.join(SLASH) + (pathHash.size() == 2 ? HASH + pathHash[1] : '')
-        } else
-            newUriString = xUri(stringUri)
-        return newUriString
+    def static isFileOrTemplate(String scheme) {
+        return scheme in [null, FILE, TEMPLATE]
+    }
+
+    static isHostOnlyHttp(String scheme, String schemeSpecificPart) {
+        return scheme in ['https', 'http'] && !schemeSpecificPart.replaceAll('^//|/$', '').contains(SLASH)
+    }
+
+    static URI _obfuscateUri(URI uri) {
+        if (!uri || uri.scheme in [MENUITEM, EXECUTE]) {
+            return uri
+        } else if (uri.scheme == MAILTO) {
+            return new URI(MAILTO, x(uri.schemeSpecificPart), null)
+        } else {
+            int lastXSegmentsToPreserve = Opt.mo_preserve_last_segment_in_links ? 1 : 0
+            //if (isFileOrTemplate(uri.scheme))
+            //    lastXSegmentsToPreserve = 0
+            if (isHostOnlyHttp(uri.scheme, uri.schemeSpecificPart))
+                lastXSegmentsToPreserve = 0 // no path; obfuscate http host, irrespective of mo_preserve_last_segment_in_links
+            def obfuscatedSsp = _obfuscateSspExceptLastSegments(uri.schemeSpecificPart, lastXSegmentsToPreserve)
+            return new URI(uri.scheme, obfuscatedSsp, uri.fragment)
+        }
+    }
+
+    static String _obfuscateSspExceptLastSegments(String schemeSpecificPart, int lastXSegmentsToPreserve = 0) {
+        //println(":: _obfuscateSspExceptLastSegments($schemeSpecificPart, $lastXSegmentsToPreserve)")
+        def startsWithDoubleSlash = schemeSpecificPart.startsWith(DOUBLE_SLASH)
+        if (startsWithDoubleSlash)
+            schemeSpecificPart = schemeSpecificPart[2..-1]
+        def segmentArray = schemeSpecificPart.split(SLASH)
+        def segmentArraySize = segmentArray.size()
+        segmentArray.eachWithIndex { segment, i ->
+            if (i < segmentArraySize - lastXSegmentsToPreserve)
+                segmentArray[i] = xUri(segment)
+        }
+        def obfuscatedSsp = (startsWithDoubleSlash ? DOUBLE_SLASH : '') + segmentArray.join(SLASH)
+        //println(":: _obfuscateSspExceptLastSegments => $obfuscatedSsp")
+        return obfuscatedSsp
     }
 
     static String xUri(String text) {
+        if (!text)
+            return text
         def parts = text.split(PERCENT)
         if (parts.size() > 1) {
             int i = 0
@@ -438,12 +501,10 @@ class MapObfuscatorUtils {
                     attr.value = XDATE
                 else if (value instanceof Number)
                     attr.value = XNUMBER
-                else if (value.class.name == 'org.freeplane.core.util.Hyperlink' || value instanceof URI) {
-                    // Hyperlink doesn't exist yet in 1.8.0; URI is used
-                    def stringUri = attr.value.toString()
-                    if (!(stringUri.startsWith(HASH) || stringUri.startsWith(MENUITEM) || stringUri.startsWith(EXECUTE)))
-                        attr.value = _obfuscateStringUri(stringUri).toURI()
-                }
+                else if (value.class.name == 'org.freeplane.core.util.Hyperlink')
+                    attr.value = _obfuscateUri(value.uri)
+                else if (value instanceof URI) // Hyperlink doesn't exist yet in 1.8.0; URI is used
+                    attr.value = _obfuscateUri(value)
             } else if (Opt.mo_obfuscate_scripts)
                 attr.value = OBFUSCATED_SCRIPT
         }
@@ -462,12 +523,45 @@ class MapObfuscatorUtils {
     static void obfuscateImagePath(NodeModel nodeModel) {
         def extResource = nodeModel.getExtension(ExternalResource.class)
         if (extResource) {
-            def obfuscatedUri = _obfuscateStringUri(extResource.uri.toString()).toURI()
+            def obfuscatedUri = _obfuscateUri(extResource.uri)
             def newExtResource = new ExternalResource(obfuscatedUri)
             def vc = Controller.currentController.modeController.getExtension(ViewerController.class)
             vc.undoableDeactivateHook(nodeModel)
             vc.undoableActivateHook(nodeModel, newExtResource)
         }
+    }
+
+    static void obfuscateStyleNamesAndOrTemplatePaths(File obfuscatedFile) {
+        def obfuscatedText = getTextWithRenamedStylesAndOrTemplatePaths(obfuscatedFile)
+        obfuscatedFile.setText(obfuscatedText, UTF8)
+    }
+
+    static String getTextWithRenamedStylesAndOrTemplatePaths(File obfuscatedFile) {
+        def mmXml = new MmXml(obfuscatedFile)
+        def replacements = new HashMap<String, String>()
+        if (Opt.mo_obfuscate_template_paths)
+            replacements.putAll(getTemplatePathsReplacements(mmXml))
+        if (Opt.mo_obfuscate_style_names) {
+            replacements.putAll(mmXml.styleReplacements)
+        }
+        return obfuscatedFile.getText(UTF8).replace(replacements)
+    }
+
+    static Map<String, String> getTemplatePathsReplacements(MmXml mmXml) {
+        def r = new HashMap<String, String>()
+        def associatedTemplate = mmXml.associatedTemplate
+        if (associatedTemplate) {
+            def obfuscatedAT = _obfuscateStringUri(associatedTemplate)
+            if (obfuscatedAT != associatedTemplate)
+                r["$ASSOCIATED_TEMPLATE_LOCATION=\"$associatedTemplate\"" as String] = "$ASSOCIATED_TEMPLATE_LOCATION=\"$obfuscatedAT\"" as String
+        }
+        def followedMap = mmXml.followedMap
+        if (followedMap) {
+            def obfuscatedFM = _obfuscateStringUri(followedMap)
+            if (obfuscatedFM != followedMap)
+                r["$FOLLOWED_TEMPLATE_LOCATION=\"$followedMap\"" as String] = "$FOLLOWED_TEMPLATE_LOCATION=\"$obfuscatedFM\"" as String
+        }
+        return r
     }
 
     static List<String> splitExtension(String filename) {
