@@ -133,17 +133,17 @@ if (Opt.mo_obfuscate_template_paths || Opt.mo_obfuscate_style_names) {
 LogUtils.info("$NAME: opening ${obfuscatedFile.name}")
 def mindMap = c.mapLoader(obfuscatedFile).withView().mindMap
 
-def findSinglesAndCloneLeaders(Node n, List<Node> singlesAndLeaders, List<Node> subtrees, List<Node> clones) {
+def findRegularsAndCloneFirstOccurrences(Node n, List<Node> regularsAndCloneFirstOccurrences, List<Node> subtrees, List<Node> clones) {
     //printf('>> findSinglesAndCloneLeaders %s %s ', n.id, n.shortText)
     if (n in subtrees) {
         //println('- subtree clone (skipping it and its children)')
-        return singlesAndLeaders
+        return regularsAndCloneFirstOccurrences
     }
     def nodesSharingContentAndSubtree = n.nodesSharingContentAndSubtree
     subtrees.addAll(nodesSharingContentAndSubtree)
     if (n !in clones) {
         //printf('- single/leader')
-        singlesAndLeaders << n
+        regularsAndCloneFirstOccurrences << n
         clones.addAll(n.nodesSharingContent - nodesSharingContentAndSubtree)
     } else {
         //printf('- clone (skipping)')
@@ -151,13 +151,13 @@ def findSinglesAndCloneLeaders(Node n, List<Node> singlesAndLeaders, List<Node> 
     def children = n.children
     //println(" - processing children (${children.size()})")
     children.each { Node it ->
-        findSinglesAndCloneLeaders(it, singlesAndLeaders, subtrees, clones)
+        findRegularsAndCloneFirstOccurrences(it, regularsAndCloneFirstOccurrences, subtrees, clones)
     }
-    return singlesAndLeaders
+    return regularsAndCloneFirstOccurrences
 }
 
-def singlesAndCloneLeaders = findSinglesAndCloneLeaders(mindMap.root, new LinkedList<Node>(), new LinkedList<Node>(), new LinkedList<Node>())
-singlesAndCloneLeaders.each { Node n ->
+def regularsAndCloneFirstOccurrences = findRegularsAndCloneFirstOccurrences(mindMap.root, new LinkedList<Node>(), new LinkedList<Node>(), new LinkedList<Node>())
+regularsAndCloneFirstOccurrences.each { Node n ->
     if (Opt.mo_obfuscate_core)
         MapObfuscatorUtils.obfuscateCore(n)
     if (Opt.mo_obfuscate_details)
