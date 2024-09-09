@@ -133,25 +133,25 @@ if (Opt.mo_obfuscate_template_paths || Opt.mo_obfuscate_style_names) {
 LogUtils.info("$NAME: opening ${obfuscatedFile.name}")
 def mindMap = c.mapLoader(obfuscatedFile).withView().mindMap
 
-def findRegularsAndCloneFirstOccurrences(Node n, List<Node> regularsAndCloneFirstOccurrences, List<Node> subtrees, List<Node> clones) {
+def findRegularsAndCloneFirstOccurrences(Node n, List<Node> regularsAndCloneFirstOccurrences, List<Node> ignoreBecauseSubtreeClones, List<Node> ignoreBecauseNonSubtreeClones) {
     //printf('>> findSinglesAndCloneLeaders %s %s ', n.id, n.shortText)
-    if (n in subtrees) {
-        //println('- subtree clone (skipping it and its children)')
-        return regularsAndCloneFirstOccurrences
-    }
-    def nodesSharingContentAndSubtree = n.nodesSharingContentAndSubtree
-    subtrees.addAll(nodesSharingContentAndSubtree)
-    if (n !in clones) {
-        //printf('- single/leader')
-        regularsAndCloneFirstOccurrences << n
-        clones.addAll(n.nodesSharingContent - nodesSharingContentAndSubtree)
+    if (n !in ignoreBecauseSubtreeClones) {
+        def subtreeClones = n.nodesSharingContentAndSubtree
+        ignoreBecauseSubtreeClones.addAll(subtreeClones)
+        if (n !in ignoreBecauseNonSubtreeClones) {
+            //printf('- single/leader')
+            regularsAndCloneFirstOccurrences << n
+            ignoreBecauseNonSubtreeClones.addAll(n.nodesSharingContent - subtreeClones)
+        } else {
+            //printf('- clone (skipping)')
+        }
+        def children = n.children
+        //println(" - processing children (${children.size()})")
+        children.each { Node it ->
+            findRegularsAndCloneFirstOccurrences(it, regularsAndCloneFirstOccurrences, ignoreBecauseSubtreeClones, ignoreBecauseNonSubtreeClones)
+        }
     } else {
-        //printf('- clone (skipping)')
-    }
-    def children = n.children
-    //println(" - processing children (${children.size()})")
-    children.each { Node it ->
-        findRegularsAndCloneFirstOccurrences(it, regularsAndCloneFirstOccurrences, subtrees, clones)
+        //println('- subtree clone (skipping it and its children)')
     }
     return regularsAndCloneFirstOccurrences
 }
