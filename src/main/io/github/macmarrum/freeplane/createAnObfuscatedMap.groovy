@@ -23,6 +23,7 @@ import groovy.xml.slurpersupport.NodeChildren
 import org.freeplane.api.MindMap
 import org.freeplane.api.Node
 import org.freeplane.core.ui.components.UITools
+import org.freeplane.core.util.FreeplaneVersion
 import org.freeplane.core.util.HtmlUtils
 import org.freeplane.core.util.LogUtils
 import org.freeplane.features.map.NodeModel
@@ -61,6 +62,7 @@ class Opt {
     public static mo_obfuscate_scripts = true
     public static mo_obfuscate_style_names = true
     public static mo_obfuscate_template_paths = true
+    public static mo_obfuscate_tags = true
     public static date_format = 'yyyy-MM-dd'
 }
 
@@ -174,10 +176,23 @@ regularsAndCloneFirstOccurrences.each { Node n ->
     if (Opt.mo_obfuscate_image_paths)
         MapObfuscatorUtils.obfuscateImagePath(m)
 }
+def tagsObfuscationSkipped = false
+if (Opt.mo_obfuscate_tags) {
+    if (FreeplaneVersion.version >= new FreeplaneVersion(1, 13, 3)) {
+        MapObfuscatorUtils.obfuscateTags(mindMap)
+    } else {
+        tagsObfuscationSkipped = true
+    }
+}
 if (Opt.mo_put_file_name_in_root_core)
     mindMap.root.text = obfuscatedStem
 LogUtils.info("$NAME: save ${obfuscatedFile.name}")
 mindMap.save(allowInteraction)
+if (tagsObfuscationSkipped) {
+    def title = 'Unsupported Freeplane Version'
+    def message = 'Tags obfuscation was skipped!\nFreeplane version 1.13.3 or higher is required'
+    UITools.informationMessage(UITools.frame, message, title, JOptionPane.WARNING_MESSAGE)
+}
 
 class MmXml {
     public final File file
@@ -559,6 +574,68 @@ class MapObfuscatorUtils {
 
     static List<String> splitExtension(String filename) {
         return filename.reverse().split(DOT, 2).collect { it.reverse() }.reverse()
+    }
+
+    static void obfuscateTags(MindMap mindMap) {
+        def mapTagCategoryInstruction = Class.forName('org.freeplane.api.MapTagCategoryInstruction')
+        def mapTagCategoryInstructionRequest = Class.forName('org.freeplane.api.MapTagCategoryInstructionRequest')
+        def mapTagCategoryInstructionType = Class.forName('org.freeplane.api.MapTagCategoryInstructionType') as Class<? extends Enum>
+        def allTags = new LinkedList<List<String>>()
+        def collectCategorized
+        collectCategorized = { tagCatNode -> // org.freeplane.api.MapTagCategoryNode
+            allTags << tagCatNode.path
+            tagCatNode.children.each { tagCatChild ->
+                collectCategorized(tagCatChild)
+            }
+        }
+        def mTagState = mindMap.tagCategories.read()
+        mTagState.categories.each { tagCatRoot ->
+            collectCategorized(tagCatRoot)
+        }
+        mTagState.uncategorizedTags.each { tagItem ->
+            allTags << tagItem.path
+        }
+        def total = allTags.size()
+        if (total == 0) {
+            println "No tags found."
+            return
+        }
+        def width = String.valueOf(total).length()
+        def fmt = "%0${width}d"
+        int tagNumber = 0
+        def getNextNumberedTag = {
+            return "tag${sprintf(fmt, ++tagNumber)}" as String
+        }
+        // Assign names in original order
+        def tagAsListToNewLeafName = new HashMap<List<String>, String>()
+        allTags.each { tagAsList ->
+            tagAsListToNewLeafName[tagAsList] = getNextNumberedTag()
+        }
+        // Rename deepest paths first so parent renames don't break child paths
+        def allTagsOrderedByLongestPathListFirst = allTags.sort { tagAsList -> tagAsList.size() * -1 }
+        def instructions = allTagsOrderedByLongestPathListFirst.collect(new ArrayList<>(allTags.size())) { tagAsList ->
+            mapTagCategoryInstruction.getDeclaredConstructor(
+                    mapTagCategoryInstructionType,
+                    List<String>,
+                    String,
+                    List<String>,
+                    Class.forName('org.freeplane.api.MapTagTargetLocation'),
+                    Integer,
+                    String,
+                    String
+            ).newInstance(
+                    mapTagCategoryInstructionType.RENAME_TAG,
+                    tagAsList,
+                    tagAsListToNewLeafName[tagAsList],
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
+            )
+        }
+        def request = mapTagCategoryInstructionRequest.getDeclaredConstructor(String, List).newInstance(mTagState.revision, instructions)
+        mindMap.tagCategories.edit(request)
     }
 }
 // @ExecutionModes({ON_SINGLE_NODE})
