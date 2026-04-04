@@ -7,7 +7,7 @@ import java.time.LocalDate
 def me = Paths.get(sourceUri)
 def versionPropertiesFile = me.parent.parent.resolve('version.properties')
 
-def version = LocalDate.now().format('Y.M.d')
+def version = LocalDate.now().format('Y.Mdd.0')
 
 /** This is how the information is used:
  * org.freeplane.main.mindmapmode.HttpVersionClient#parseProperties(java.net.URL, org.freeplane.core.util.FreeplaneVersion)
