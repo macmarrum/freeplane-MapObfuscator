@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022-2024   macmarrum
+ * Copyright (C) 2022-2024, 2026  macmarrum (at) outlook (dot) ie
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -179,10 +179,10 @@ if (Opt.mo_put_file_name_in_root_core)
 LogUtils.info("$NAME: save ${obfuscatedFile.name}")
 mindMap.save(allowInteraction)
 
-
 class MmXml {
     public final File file
     public final GPathResult map
+    public final NodeChild hookMapStyle
     public static final UTF8 = 'UTF-8'
     public static final STYLE_NAME_PREFIX = 'Style'
     public static final MAP_STYLE = 'MapStyle'
@@ -192,10 +192,13 @@ class MmXml {
     public static final TEXT_FORMAT = ' TEXT="%s"'
     public static final STYLE_REF_FORMAT = ' STYLE_REF="%s"'
     public static final NAMES_OF_NODES_WITH_STYLE_REF = ['node', 'conditional_style', 'arrowlink']
+    private static final ASSOCIATED_TEMPLATE_LOCATION = 'associatedTemplateLocation'
+    private static final FOLLOWED_TEMPLATE_LOCATION = 'followedTemplateLocation'
 
     MmXml(File file) {
         this.file = file
         map = parseXml(file)
+        hookMapStyle = getMapNodeHookMapStyle()
     }
 
     static parseXml(File file) {
@@ -203,7 +206,7 @@ class MmXml {
         return new XmlSlurper(false, false, true).parseText(text)
     }
 
-    Map<String, String> getStyleNameOldToNew() {
+    LinkedHashMap<String, String> getStyleNameOldToNew() {
         def customStyleNames = getUserDefinedCustomStyleNames()
         def numberOfDigits = (customStyleNames.size() as String).size()
         def oldToNew = new LinkedHashMap<String, String>(customStyleNames.size())
@@ -222,7 +225,7 @@ class MmXml {
         return oldToNew
     }
 
-    Map<String, String> getStyleReplacements() {
+    LinkedHashMap<String, String> getStyleReplacements() {
         def oldToNew = getStyleNameOldToNew()
         def replacements = new LinkedHashMap<String, String>(oldToNew.size() * 2)
         String key
@@ -238,13 +241,13 @@ class MmXml {
         return replacements
     }
 
-    /** In the first-level {@code <node ...>} element(s), find a {@code <hook ...>} which has the attribute {@code NAME="MapStyle"} */
-    def getHookMapStyle() {
-        return map.node.hook.find { it.@NAME == MAP_STYLE }
+    /** In the zeroth {@code <node ...>} element, find a {@code <hook ...>} which has the attribute {@code NAME="MapStyle"} */
+    private NodeChild getMapNodeHookMapStyle() {
+        return map.node[0].hook.find { it.@NAME == MAP_STYLE }
     }
 
-    def getUserDefinedStylesParent() {
-        return hookMapStyle.map_styles.stylenode.stylenode.find { it.@LOCALIZED_TEXT == STYLES_USER_DEFINED }
+    NodeChild getUserDefinedStylesParent() {
+        return hookMapStyle.map_styles[0].stylenode[0].stylenode.find { it.@LOCALIZED_TEXT == STYLES_USER_DEFINED }
     }
 
     /** Find styles created by User, as opposed to styles that come with Freeplane,
@@ -262,19 +265,27 @@ class MmXml {
     }
 
     String getAssociatedTemplate() {
-        return hookMapStyle.properties.@associatedTemplateLocation
+        return hookMapStyle.properties[0].@associatedTemplateLocation
     }
 
     String getFollowedMap() {
-        return hookMapStyle.properties.@followedTemplateLocation
+        return hookMapStyle.properties[0].@followedTemplateLocation
     }
-}
 
-class FSBCImpl extends FreeplaneScriptBaseClass {
-
-    @Override
-    Object run() {
-        return null
+    Map<String, String> getTemplatePathsReplacements() {
+        def r = new HashMap<String, String>()
+        if (associatedTemplate) {
+            def obfuscatedAT = MapObfuscatorUtils._obfuscateStringUri(associatedTemplate)
+            if (obfuscatedAT != associatedTemplate)
+                r["$ASSOCIATED_TEMPLATE_LOCATION=\"$associatedTemplate\"" as String] = "$ASSOCIATED_TEMPLATE_LOCATION=\"$obfuscatedAT\"" as String
+        }
+        def followedMap = followedMap
+        if (followedMap) {
+            def obfuscatedFM = MapObfuscatorUtils._obfuscateStringUri(followedMap)
+            if (obfuscatedFM != followedMap)
+                r["$FOLLOWED_TEMPLATE_LOCATION=\"$followedMap\"" as String] = "$FOLLOWED_TEMPLATE_LOCATION=\"$obfuscatedFM\"" as String
+        }
+        return r
     }
 }
 
@@ -304,11 +315,9 @@ class MapObfuscatorUtils {
     private static final SCRIPT = 'script'
     private static final OBFUSCATED_SCRIPT = '// obfuscated script'
     private static final CONNECTOR_LABEL_NAMES = ['sourceLabel', 'middleLabel', 'targetLabel']
-    private static final XDATE = new FSBCImpl().format(Date.parse('yyyy-MM-dd', '1970-01-01'), Opt.date_format)
+    private static final XDATE = '1970-01-01'
     private static final XNUMBER = 123
     private static final DOT = /\./
-    private static final ASSOCIATED_TEMPLATE_LOCATION = 'associatedTemplateLocation'
-    private static final FOLLOWED_TEMPLATE_LOCATION = 'followedTemplateLocation'
 
     static void informAlreadyObfuscated() {
         def title = 'Already obfuscated'
@@ -455,7 +464,8 @@ class MapObfuscatorUtils {
             //if (isFileOrTemplate(uri.scheme))
             //    lastXSegmentsToPreserve = 0
             if (isHostOnlyHttp(uri.scheme, uri.schemeSpecificPart))
-                lastXSegmentsToPreserve = 0 // no path; obfuscate http host, irrespective of mo_preserve_last_segment_in_links
+                lastXSegmentsToPreserve = 0
+            // no path; obfuscate http host, irrespective of mo_preserve_last_segment_in_links
             def obfuscatedSsp = _obfuscateSspExceptLastSegments(uri.schemeSpecificPart, lastXSegmentsToPreserve)
             return new URI(uri.scheme, obfuscatedSsp, uri.fragment)
         }
@@ -538,30 +548,13 @@ class MapObfuscatorUtils {
 
     static String getTextWithRenamedStylesAndOrTemplatePaths(File obfuscatedFile) {
         def mmXml = new MmXml(obfuscatedFile)
-        def replacements = new HashMap<String, String>()
+        def replacements = new LinkedHashMap<String, String>()  // use Linked to aid in debugging
         if (Opt.mo_obfuscate_template_paths)
-            replacements.putAll(getTemplatePathsReplacements(mmXml))
-        if (Opt.mo_obfuscate_style_names) {
+            replacements.putAll(mmXml.templatePathsReplacements)
+        if (Opt.mo_obfuscate_style_names)
             replacements.putAll(mmXml.styleReplacements)
-        }
+//        replacements.each { k, v -> println "$k  ->  $v" }
         return obfuscatedFile.getText(UTF8).replace(replacements)
-    }
-
-    static Map<String, String> getTemplatePathsReplacements(MmXml mmXml) {
-        def r = new HashMap<String, String>()
-        def associatedTemplate = mmXml.associatedTemplate
-        if (associatedTemplate) {
-            def obfuscatedAT = _obfuscateStringUri(associatedTemplate)
-            if (obfuscatedAT != associatedTemplate)
-                r["$ASSOCIATED_TEMPLATE_LOCATION=\"$associatedTemplate\"" as String] = "$ASSOCIATED_TEMPLATE_LOCATION=\"$obfuscatedAT\"" as String
-        }
-        def followedMap = mmXml.followedMap
-        if (followedMap) {
-            def obfuscatedFM = _obfuscateStringUri(followedMap)
-            if (obfuscatedFM != followedMap)
-                r["$FOLLOWED_TEMPLATE_LOCATION=\"$followedMap\"" as String] = "$FOLLOWED_TEMPLATE_LOCATION=\"$obfuscatedFM\"" as String
-        }
-        return r
     }
 
     static List<String> splitExtension(String filename) {
